@@ -1962,7 +1962,7 @@ private:
 };
 #endif
 
-class ModeDiving : public Mode {
+class ModeDive : public Mode {
 
 public:
     // inherit constructor

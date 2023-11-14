@@ -217,6 +217,7 @@ public:
     friend class ModeBrake;
     friend class ModeCircle;
     friend class ModeDrift;
+    friend class ModeDive;
     friend class ModeFlip;
     friend class ModeFlowHold;
     friend class ModeFollow;

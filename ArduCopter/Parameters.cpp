@@ -251,7 +251,7 @@ const AP_Param::Info Copter::var_info[] = {
     // @Param: FLTMODE1
     // @DisplayName: Flight Mode 1
     // @Description: Flight mode when pwm of Flightmode channel(FLTMODE_CH) is <= 1230
-    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate,27:Auto RTL
+    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate,27:Auto RTL,28:DRIVE
     // @User: Standard
     GSCALAR(flight_mode1, "FLTMODE1",               (uint8_t)FLIGHT_MODE_1),
 
@@ -838,11 +838,9 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
 
     // 18 was used by AP_VisualOdom
 
-#if AP_TEMPCALIBRATION_ENABLED
     // @Group: TCAL
     // @Path: ../libraries/AP_TempCalibration/AP_TempCalibration.cpp
     AP_SUBGROUPINFO(temp_calibration, "TCAL", 19, ParametersG2, AP_TempCalibration),
-#endif
 
 #if TOY_MODE_ENABLED == ENABLED
     // @Group: TMODE
@@ -1043,7 +1041,8 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Values: 0:Do not track, 1:Ground, 2:Ceiling
     // @User: Advanced
     // @RebootRequired: True
-    AP_GROUPINFO("SURFTRAK_MODE", 51, ParametersG2, surftrak_mode, (uint8_t)Copter::SurfaceTracking::Surface::GROUND),
+    AP_GROUPINFO("SURFTRAK_MODE", 51, ParametersG2, surftrak_
+    , (uint8_t)Copter::SurfaceTracking::Surface::GROUND),
 
     // @Param: FS_DR_ENABLE
     // @DisplayName: DeadReckon Failsafe Action
@@ -1238,10 +1237,7 @@ const AP_Param::GroupInfo ParametersG2::var_info2[] = {
   constructor for g2 object
  */
 ParametersG2::ParametersG2(void)
-    : command_model_pilot(PILOT_Y_RATE_DEFAULT, PILOT_Y_EXPO_DEFAULT, 0.0f)
-#if AP_TEMPCALIBRATION_ENABLED
-    , temp_calibration()
-#endif
+    : temp_calibration() // this doesn't actually need constructing, but removing it here is problematic syntax-wise
 #if AP_BEACON_ENABLED
     , beacon()
 #endif
@@ -1286,6 +1282,8 @@ ParametersG2::ParametersG2(void)
 #if MODE_ACRO_ENABLED == ENABLED || MODE_DRIFT_ENABLED == ENABLED
     ,command_model_acro_y(ACRO_Y_RATE_DEFAULT, ACRO_Y_EXPO_DEFAULT, 0.0f)
 #endif
+
+    ,command_model_pilot(PILOT_Y_RATE_DEFAULT, PILOT_Y_EXPO_DEFAULT, 0.0f)
 
 #if WEATHERVANE_ENABLED == ENABLED
     ,weathervane()

@@ -36,6 +36,9 @@ Mode *Copter::mode_from_mode_num(const Mode::Number mode)
 
     switch (mode) {
 #if MODE_ACRO_ENABLED == ENABLED
+        case Mode::Number::DRIVE:
+            ret = &mode_drive;
+            break;
         case Mode::Number::ACRO:
             ret = &mode_acro;
             break;

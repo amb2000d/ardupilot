@@ -1,6 +1,6 @@
 #include "Copter.h"
 
-bool ModeDrive::init(bool ignore_checks)
+bool ModeDive::init(bool ignore_checks)
 {
     // reset flag indicating if pilot has applied roll or pitch inputs during landing
     copter.ap.land_repo_active = false;
@@ -13,7 +13,7 @@ bool ModeDrive::init(bool ignore_checks)
     return true;
 }
 
-void ModeDrive::run()
+void ModeDive::run()
 {
     if (!motors->armed()) {
         // Motors should be Stopped

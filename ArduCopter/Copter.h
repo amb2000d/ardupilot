@@ -1047,7 +1047,7 @@ private:
 #if MODE_TURTLE_ENABLED == ENABLED
     ModeTurtle mode_turtle;
 #endif
-    ModeDrive mode_drive;
+    ModeDive mode_dive;
 
     // mode.cpp
     Mode *mode_from_mode_num(const Mode::Number mode);

@@ -1,5 +1,7 @@
 #include "Copter.h"
 
+#if MODE_TURTLE_ENABLED == ENABLED
+
 bool ModeDive::init(bool ignore_checks)
 {
     // reset flag indicating if pilot has applied roll or pitch inputs during landing
@@ -21,3 +23,4 @@ void ModeDive::run()
     }
     
 }
+#endif

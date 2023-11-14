@@ -1048,7 +1048,10 @@ private:
 #if MODE_TURTLE_ENABLED == ENABLED
     ModeTurtle mode_turtle;
 #endif
+#if MODE_DIVE_ENABLED == ENABLED
     ModeDive mode_dive;
+#endif
+
 
     // mode.cpp
     Mode *mode_from_mode_num(const Mode::Number mode);

@@ -10,7 +10,7 @@ void Sub::enable_motor_output()
 void Sub::motors_output()
 {
     // Motor detection mode controls the thrusters directly
-    if (control_mode == Mode::Number::MOTOR_DETECT){
+    if (control_mode == MOTOR_DETECT){
         return;
     }
     // check if we are performing the motor test
@@ -70,7 +70,7 @@ bool Sub::verify_motor_test()
 
     if (!pass) {
         ap.motor_test = false;
-        AP::arming().disarm(AP_Arming::Method::MOTORTEST);
+        motors.armed(false); // disarm motors
         last_do_motor_test_fail_ms = AP_HAL::millis();
         return false;
     }
@@ -78,23 +78,14 @@ bool Sub::verify_motor_test()
     return true;
 }
 
-bool Sub::handle_do_motor_test(mavlink_command_int_t command) {
+bool Sub::handle_do_motor_test(mavlink_command_long_t command) {
     last_do_motor_test_ms = AP_HAL::millis();
 
     // If we are not already testing motors, initialize test
-    static uint32_t tLastInitializationFailed = 0;
     if(!ap.motor_test) {
-        // Do not allow initializations attempt under 2 seconds
-        // If one fails, we need to give the user time to fix the issue
-        // instead of spamming error messages
-        if (AP_HAL::millis() > (tLastInitializationFailed + 2000)) {
-            if (!init_motor_test()) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "motor test initialization failed!");
-                tLastInitializationFailed = AP_HAL::millis();
-                return false; // init fail
-            }
-        } else {
-            return false;
+        if (!init_motor_test()) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "motor test initialization failed!");
+            return false; // init fail
         }
     }
 
@@ -103,9 +94,9 @@ bool Sub::handle_do_motor_test(mavlink_command_int_t command) {
     float throttle = command.param3;
     // float timeout_s = command.param4; // not used
     // float motor_count = command.param5; // not used
-    const uint32_t test_type = command.y;
+    float test_type = command.param6;
 
-    if (test_type != MOTOR_TEST_ORDER_BOARD) {
+    if (!is_equal(test_type, (float)MOTOR_TEST_ORDER_BOARD)) {
         gcs().send_text(MAV_SEVERITY_WARNING, "bad test type %0.2f", (double)test_type);
         return false; // test type not supported here
     }
@@ -167,8 +158,8 @@ void Sub::translate_circle_nav_rp(float &lateral_out, float &forward_out)
 void Sub::translate_pos_control_rp(float &lateral_out, float &forward_out)
 {
     // get roll and pitch targets in centidegrees
-    int32_t lateral = pos_control.get_roll_cd();
-    int32_t forward = -pos_control.get_pitch_cd(); // output is reversed
+    int32_t lateral = pos_control.get_roll();
+    int32_t forward = -pos_control.get_pitch(); // output is reversed
 
     // constrain target forward/lateral values
     lateral = constrain_int16(lateral, -aparm.angle_max, aparm.angle_max);

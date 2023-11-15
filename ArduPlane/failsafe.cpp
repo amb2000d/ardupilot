@@ -47,7 +47,7 @@ void Plane::failsafe_check(void)
 
         rc().read_input();
 
-#if AP_ADVANCEDFAILSAFE_ENABLED
+#if ADVANCED_FAILSAFE == ENABLED
         if (in_calibration) {
             // tell the failsafe system that we are calibrating
             // sensors, so don't trigger failsafe
@@ -63,12 +63,12 @@ void Plane::failsafe_check(void)
         // pass RC inputs to outputs every 20ms
         RC_Channels::clear_overrides();
 
-        float roll = roll_in_expo(false);
-        float pitch = pitch_in_expo(false);
-        float throttle = get_throttle_input(true);
-        float rudder = rudder_in_expo(false);
+        int16_t roll = channel_roll->get_control_in_zero_dz();
+        int16_t pitch = channel_pitch->get_control_in_zero_dz();
+        int16_t throttle = get_throttle_input(true);
+        int16_t rudder = channel_rudder->get_control_in_zero_dz();
 
-        if (!arming.is_armed_and_safety_off()) {
+        if (!hal.util->get_soft_armed()) {
             throttle = 0;
         }
         
@@ -83,7 +83,7 @@ void Plane::failsafe_check(void)
         // this is to allow the failsafe module to deliberately crash 
         // the plane. Only used in extreme circumstances to meet the
         // OBC rules
-#if AP_ADVANCEDFAILSAFE_ENABLED
+#if ADVANCED_FAILSAFE == ENABLED
         if (afs.should_crash_vehicle()) {
             afs.terminate_vehicle();
             if (!afs.terminating_vehicle_via_landing()) {
@@ -95,21 +95,12 @@ void Plane::failsafe_check(void)
         // setup secondary output channels that do have
         // corresponding input channels
         SRV_Channels::copy_radio_in_out(SRV_Channel::k_manual, true);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_flap, 0.0);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_flap_auto, 0.0);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_flap, 0);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_flap_auto, 0);
 
         // setup flaperons
-        flaperon_update();
+        flaperon_update(0);
 
         servos_output();
-
-        // in SITL we send through the servo outputs so we can verify
-        // we're manipulating surfaces
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-        GCS_MAVLINK *chan = gcs().chan(0);
-        if (HAVE_PAYLOAD_SPACE(chan->get_chan(), SERVO_OUTPUT_RAW)) {
-            chan->send_servo_output_raw();
-        }
-#endif
     }
 }

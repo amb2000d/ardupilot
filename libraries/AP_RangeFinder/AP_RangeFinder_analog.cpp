@@ -18,15 +18,12 @@
  *
  */
 
-#include "AP_RangeFinder_analog.h"
-
-#if AP_RANGEFINDER_ANALOG_ENABLED
-
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
-#include "AP_RangeFinder.h"
+#include "RangeFinder.h"
 #include "AP_RangeFinder_Params.h"
+#include "AP_RangeFinder_analog.h"
 
 extern const AP_HAL::HAL& hal;
 
@@ -41,10 +38,10 @@ AP_RangeFinder_analog::AP_RangeFinder_analog(RangeFinder::RangeFinder_State &_st
     source = hal.analogin->channel(_params.pin);
     if (source == nullptr) {
         // failed to allocate a ADC channel? This shouldn't happen
-        set_status(RangeFinder::Status::NotConnected);
+        set_status(RangeFinder::RangeFinder_NotConnected);
         return;
     }
-    set_status(RangeFinder::Status::NoData);
+    set_status(RangeFinder::RangeFinder_NoData);
 }
 
 /* 
@@ -66,11 +63,12 @@ bool AP_RangeFinder_analog::detect(AP_RangeFinder_Params &_params)
  */
 void AP_RangeFinder_analog::update_voltage(void)
 {
-   if (source == nullptr || !source->set_pin(params.pin)) {
+   if (source == nullptr) {
        state.voltage_mv = 0;
-       set_status(RangeFinder::Status::NotConnected);
        return;
    }
+   // cope with changed settings
+   source->set_pin(params.pin);
    if (params.ratiometric) {
        state.voltage_mv = source->voltage_average_ratiometric() * 1000U;
    } else {
@@ -88,19 +86,19 @@ void AP_RangeFinder_analog::update(void)
     float dist_m = 0;
     float scaling = params.scaling;
     float offset  = params.offset;
-    RangeFinder::Function function = (RangeFinder::Function)params.function.get();
+    RangeFinder::RangeFinder_Function function = (RangeFinder::RangeFinder_Function)params.function.get();
     int16_t _max_distance_cm = params.max_distance_cm;
 
     switch (function) {
-    case RangeFinder::Function::LINEAR:
+    case RangeFinder::FUNCTION_LINEAR:
         dist_m = (v - offset) * scaling;
         break;
 	  
-    case RangeFinder::Function::INVERTED:
+    case RangeFinder::FUNCTION_INVERTED:
         dist_m = (offset - v) * scaling;
         break;
 
-    case RangeFinder::Function::HYPERBOLA:
+    case RangeFinder::FUNCTION_HYPERBOLA:
         if (v <= offset) {
             dist_m = 0;
         } else {
@@ -114,11 +112,10 @@ void AP_RangeFinder_analog::update(void)
     if (dist_m < 0) {
         dist_m = 0;
     }
-    state.distance_m = dist_m;
+    state.distance_cm = dist_m * 100.0f;
     state.last_reading_ms = AP_HAL::millis();
 
     // update range_valid state based on distance measured
     update_status();
 }
 
-#endif  // AP_RANGEFINDER_ANALOG_ENABLED

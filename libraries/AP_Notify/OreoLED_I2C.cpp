@@ -17,14 +17,11 @@
   but with some components from orleod.cpp from px4 firmware
 */
 
-#include "OreoLED_I2C.h"
-
-#if AP_NOTIFY_OREOLED_ENABLED
-
 #include <AP_HAL/AP_HAL.h>
 #include <AP_HAL/I2CDevice.h>
 
 #include <AP_BoardConfig/AP_BoardConfig.h>
+#include "OreoLED_I2C.h"
 #include "AP_Notify.h"
 #include <utility>
 
@@ -564,7 +561,6 @@ void OreoLED_I2C::send_sync(void)
 
 
 
-#if AP_NOTIFY_MAVLINK_LED_CONTROL_SUPPORT_ENABLED
 // Handle an LED_CONTROL mavlink message
 void OreoLED_I2C::handle_led_control(const mavlink_message_t &msg)
 {
@@ -649,7 +645,6 @@ void OreoLED_I2C::handle_led_control(const mavlink_message_t &msg)
     }
     _pattern_override = packet.pattern;
 }
-#endif
 
 OreoLED_I2C::oreo_state::oreo_state()
 {
@@ -706,11 +701,9 @@ void OreoLED_I2C::oreo_state::set_rgb(enum oreoled_pattern new_pattern, uint8_t 
     phase_offset = new_phase_offset;
 }
 
-bool OreoLED_I2C::oreo_state::operator==(const OreoLED_I2C::oreo_state &os) const
+bool OreoLED_I2C::oreo_state::operator==(const OreoLED_I2C::oreo_state &os)
 {
     return ((os.mode==mode) && (os.pattern==pattern) && (os.macro==macro) && (os.red==red) && (os.green==green) && (os.blue==blue)
             && (os.amplitude_red==amplitude_red) && (os.amplitude_green==amplitude_green) && (os.amplitude_blue==amplitude_blue)
             && (os.period==period) && (os.repeat==repeat) && (os.phase_offset==phase_offset));
 }
-
-#endif  // AP_NOTIFY_OREOLED_ENABLED

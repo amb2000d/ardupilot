@@ -246,7 +246,9 @@ bool AP_InertialSensor_LSM9DS1::_init_sensor()
 
 bool AP_InertialSensor_LSM9DS1::_hardware_init()
 {
-    _spi_sem->take_blocking();
+    if (!_spi_sem->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
+        return false;
+    }
 
     uint8_t tries, whoami;
 
@@ -255,7 +257,7 @@ bool AP_InertialSensor_LSM9DS1::_hardware_init()
 
     whoami = _register_read(LSM9DS1XG_WHO_AM_I);
     if (whoami != WHO_AM_I) {
-        DEV_PRINTF("LSM9DS1: unexpected acc/gyro WHOAMI 0x%x\n", whoami);
+        hal.console->printf("LSM9DS1: unexpected acc/gyro WHOAMI 0x%x\n", whoami);
         goto fail_whoami;
     }
 
@@ -284,7 +286,7 @@ bool AP_InertialSensor_LSM9DS1::_hardware_init()
 #endif
     }
     if (tries == 5) {
-        DEV_PRINTF("Failed to boot LSM9DS1 5 times\n\n");
+        hal.console->printf("Failed to boot LSM9DS1 5 times\n\n");
         goto fail_tries;
     }
 
@@ -330,10 +332,8 @@ void AP_InertialSensor_LSM9DS1::_fifo_reset()
  */
 void AP_InertialSensor_LSM9DS1::start(void)
 {
-    if (!_imu.register_gyro(_gyro_instance, 952, _dev->get_bus_id_devtype(DEVTYPE_GYR_LSM9DS1)) ||
-        !_imu.register_accel(_accel_instance, 952, _dev->get_bus_id_devtype(DEVTYPE_ACC_LSM9DS1))) {
-        return;
-    }
+    _gyro_instance = _imu.register_gyro(952, _dev->get_bus_id_devtype(DEVTYPE_GYR_LSM9DS1));
+    _accel_instance = _imu.register_accel(952, _dev->get_bus_id_devtype(DEVTYPE_ACC_LSM9DS1));
 
     set_accel_orientation(_accel_instance, _rotation);
     set_gyro_orientation(_gyro_instance, _rotation);
@@ -428,9 +428,7 @@ void AP_InertialSensor_LSM9DS1::_poll_data()
     }
 
     // check next register value for correctness
-    AP_HAL::Device::checkreg reg;
-    if (!_dev->check_next_register(reg)) {
-        log_register_change(_dev->get_bus_id(), reg);
+    if (!_dev->check_next_register()) {
         _inc_accel_error_count(_accel_instance);
     }
 }
@@ -448,7 +446,7 @@ void AP_InertialSensor_LSM9DS1::_read_data_transaction_x(uint16_t samples)
         struct sensor_raw_data raw_data_temp = { };
 
         if (!_dev->transfer(&_reg, 1, (uint8_t *) &raw_data_temp, sizeof(raw_data_temp))) {
-            DEV_PRINTF("LSM9DS1: error reading accelerometer\n");
+            hal.console->printf("LSM9DS1: error reading accelerometer\n");
             return;
         }
 
@@ -485,7 +483,7 @@ void AP_InertialSensor_LSM9DS1::_read_data_transaction_g(uint16_t samples)
         struct sensor_raw_data raw_data_temp = { };
 
         if (!_dev->transfer(&_reg, 1, (uint8_t *) &raw_data_temp, sizeof(raw_data_temp))) {
-            DEV_PRINTF("LSM9DS1: error reading gyroscope\n");
+            hal.console->printf("LSM9DS1: error reading gyroscope\n");
             return;
         }
 

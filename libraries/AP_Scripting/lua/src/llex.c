@@ -27,8 +27,6 @@
 #include "ltable.h"
 #include "lzio.h"
 
-// lua code does lots of casting, these warnings are not helpful
-#pragma GCC diagnostic ignored "-Wcast-align"
 
 
 #define next(ls) (ls->current = zgetc(ls->z))

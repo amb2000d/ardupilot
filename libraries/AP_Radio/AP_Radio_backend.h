@@ -21,8 +21,6 @@
 #include <AP_HAL/AP_HAL.h>
 #include "AP_Radio.h"
 
-#include <AP_Math/AP_Math.h>
-
 class AP_Radio_backend
 {
 public:

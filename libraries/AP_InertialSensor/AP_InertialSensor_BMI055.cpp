@@ -101,10 +101,8 @@ AP_InertialSensor_BMI055::probe(AP_InertialSensor &imu,
 
 void AP_InertialSensor_BMI055::start()
 {
-    if (!_imu.register_accel(accel_instance, ACCEL_BACKEND_SAMPLE_RATE, dev_accel->get_bus_id_devtype(DEVTYPE_INS_BMI055)) ||
-        !_imu.register_gyro(gyro_instance, GYRO_BACKEND_SAMPLE_RATE,   dev_gyro->get_bus_id_devtype(DEVTYPE_INS_BMI055))) {
-        return;
-    }
+    accel_instance = _imu.register_accel(ACCEL_BACKEND_SAMPLE_RATE, dev_accel->get_bus_id_devtype(DEVTYPE_INS_BMI055));
+    gyro_instance = _imu.register_gyro(GYRO_BACKEND_SAMPLE_RATE,   dev_gyro->get_bus_id_devtype(DEVTYPE_INS_BMI055));
 
     // setup sensor rotations from probe()
     set_gyro_orientation(gyro_instance, rotation);
@@ -161,7 +159,7 @@ bool AP_InertialSensor_BMI055::accel_init()
         goto failed;
     }
 
-    DEV_PRINTF("BMI055: found accel\n");
+    hal.console->printf("BMI055: found accel\n");
 
     dev_accel->get_semaphore()->give();
     return true;
@@ -215,7 +213,7 @@ bool AP_InertialSensor_BMI055::gyro_init()
         goto failed;
     }
 
-    DEV_PRINTF("BMI055: found gyro\n");    
+    hal.console->printf("BMI055: found gyro\n");    
 
     dev_gyro->get_semaphore()->give();
     return true;
@@ -285,10 +283,8 @@ void AP_InertialSensor_BMI055::read_fifo_accel(void)
             _publish_temperature(accel_instance, temp_degc);
         }
     }
-
-    AP_HAL::Device::checkreg reg;
-    if (!dev_accel->check_next_register(reg)) {
-        log_register_change(dev_accel->get_bus_id(), reg);
+    
+    if (!dev_accel->check_next_register()) {
         _inc_accel_error_count(accel_instance);
     }
 }
@@ -333,9 +329,7 @@ void AP_InertialSensor_BMI055::read_fifo_gyro(void)
         _notify_new_gyro_raw_sample(gyro_instance, gyro);
     }
 
-    AP_HAL::Device::checkreg reg;
-    if (!dev_gyro->check_next_register(reg)) {
-        log_register_change(dev_gyro->get_bus_id(), reg);
+    if (!dev_gyro->check_next_register()) {
         _inc_gyro_error_count(gyro_instance);
     }
 }

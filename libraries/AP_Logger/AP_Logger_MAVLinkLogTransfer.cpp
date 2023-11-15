@@ -22,28 +22,29 @@
 #include <AP_Logger/AP_Logger.h>
 #include <GCS_MAVLink/GCS.h> // for LOG_ENTRY
 
-#if HAL_GCS_ENABLED
-
 extern const AP_HAL::HAL& hal;
+
+// We avoid doing log messages when timing is critical:
+bool AP_Logger::should_handle_log_message()
+{
+    if (!WritesEnabled()) {
+        // this is currently used as a proxy for "in_mavlink_delay"
+        return false;
+    }
+    if (vehicle_is_armed()) {
+        return false;
+    }
+    return true;
+}
 
 /**
    handle all types of log download requests from the GCS
  */
 void AP_Logger::handle_log_message(GCS_MAVLINK &link, const mavlink_message_t &msg)
 {
-    if (!WritesEnabled()) {
-        // this is currently used as a proxy for "in_mavlink_delay"
+    if (!should_handle_log_message()) {
         return;
     }
-    if (vehicle_is_armed()) {
-        if (!_warned_log_disarm) {
-            link.send_text(MAV_SEVERITY_ERROR, "Disarm for log download");
-            _warned_log_disarm = true;
-        }
-        return;
-    }
-    _warned_log_disarm = false;
-    _last_mavlink_log_transfer_message_handled_ms = AP_HAL::millis();
     switch (msg.msgid) {
     case MAVLINK_MSG_ID_LOG_REQUEST_LIST:
         handle_log_request_list(link, msg);
@@ -76,6 +77,7 @@ void AP_Logger::handle_log_request_list(GCS_MAVLINK &link, const mavlink_message
     mavlink_msg_log_request_list_decode(&msg, &packet);
 
     _log_num_logs = get_num_logs();
+    uint16_t last_log = find_last_log();
 
     if (_log_num_logs == 0) {
         _log_next_list_entry = 0;
@@ -84,15 +86,15 @@ void AP_Logger::handle_log_request_list(GCS_MAVLINK &link, const mavlink_message
         _log_next_list_entry = packet.start;
         _log_last_list_entry = packet.end;
 
-        if (_log_last_list_entry > _log_num_logs) {
-            _log_last_list_entry = _log_num_logs;
+        if (_log_last_list_entry > last_log) {
+            _log_last_list_entry = last_log;
         }
         if (_log_next_list_entry < 1) {
-            _log_next_list_entry = 1;
+            _log_next_list_entry = last_log - _log_num_logs + 1;
         }
     }
 
-    transfer_activity = TransferActivity::LISTING;
+    transfer_activity = LISTING;
     _log_sending_link = &link;
 
     handle_log_send_listing();
@@ -121,12 +123,13 @@ void AP_Logger::handle_log_request_data(GCS_MAVLINK &link, const mavlink_message
     mavlink_msg_log_request_data_decode(&msg, &packet);
 
     // consider opening or switching logs:
-    if (transfer_activity != TransferActivity::SENDING || _log_num_data != packet.id) {
+    if (transfer_activity != SENDING || _log_num_data != packet.id) {
 
         uint16_t num_logs = get_num_logs();
-        if (packet.id > num_logs || packet.id < 1) {
+        uint16_t last_log = find_last_log();
+        if (packet.id > last_log || packet.id < (last_log - num_logs + 1)) {
             // request for an invalid log; cancel any current download
-            transfer_activity = TransferActivity::IDLE;
+            transfer_activity = IDLE;
             return;
         }
 
@@ -149,7 +152,7 @@ void AP_Logger::handle_log_request_data(GCS_MAVLINK &link, const mavlink_message
         _log_data_remaining = packet.count;
     }
 
-    transfer_activity = TransferActivity::SENDING;
+    transfer_activity = SENDING;
     _log_sending_link = &link;
 
     handle_log_send();
@@ -175,7 +178,7 @@ void AP_Logger::handle_log_request_end(GCS_MAVLINK &link, const mavlink_message_
     mavlink_log_request_end_t packet;
     mavlink_msg_log_request_end_decode(&msg, &packet);
 
-    transfer_activity = TransferActivity::IDLE;
+    transfer_activity = IDLE;
     _log_sending_link = nullptr;
 }
 
@@ -194,12 +197,12 @@ void AP_Logger::handle_log_send()
         return;
     }
     switch (transfer_activity) {
-    case TransferActivity::IDLE:
+    case IDLE:
         break;
-    case TransferActivity::LISTING:
+    case LISTING:
         handle_log_send_listing();
         break;
-    case TransferActivity::SENDING:
+    case SENDING:
         handle_log_sending();
         break;
     }
@@ -227,7 +230,7 @@ void AP_Logger::handle_log_sending()
 #endif
 
     for (uint8_t i=0; i<num_sends; i++) {
-        if (transfer_activity != TransferActivity::SENDING) {
+        if (transfer_activity != SENDING) {
             // may have completed sending data
             break;
         }
@@ -267,7 +270,7 @@ void AP_Logger::handle_log_send_listing()
                                time_utc,
                                size);
     if (_log_next_list_entry == _log_last_list_entry) {
-        transfer_activity = TransferActivity::IDLE;
+        transfer_activity = IDLE;
         _log_sending_link = nullptr;
     } else {
         _log_next_list_entry++;
@@ -290,27 +293,25 @@ bool AP_Logger::handle_log_send_data()
         return false;
     }
 
-    int16_t nbytes = 0;
+    int16_t ret = 0;
     uint32_t len = _log_data_remaining;
 	mavlink_log_data_t packet;
 
     if (len > MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN) {
         len = MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN;
     }
-
-    nbytes = get_log_data(_log_num_data, _log_data_page, _log_data_offset, len, packet.data);
-
-    if (nbytes < 0) {
+    ret = get_log_data(_log_num_data, _log_data_page, _log_data_offset, len, packet.data);
+    if (ret < 0) {
         // report as EOF on error
-        nbytes = 0;
+        ret = 0;
     }
-    if (nbytes < MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN) {
-        memset(&packet.data[nbytes], 0, MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN-nbytes);
+    if (ret < MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN) {
+        memset(&packet.data[ret], 0, MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN-ret);
     }
 
     packet.ofs = _log_data_offset;
     packet.id = _log_num_data;
-    packet.count = nbytes;
+    packet.count = ret;
     _mav_finalize_message_chan_send(_log_sending_link->get_chan(),
                                     MAVLINK_MSG_ID_LOG_DATA,
                                     (const char *)&packet,
@@ -318,13 +319,11 @@ bool AP_Logger::handle_log_send_data()
                                     MAVLINK_MSG_ID_LOG_DATA_LEN,
                                     MAVLINK_MSG_ID_LOG_DATA_CRC);
 
-    _log_data_offset += nbytes;
-    _log_data_remaining -= nbytes;
-    if (nbytes < MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN || _log_data_remaining == 0) {
-        transfer_activity = TransferActivity::IDLE;
+    _log_data_offset += len;
+    _log_data_remaining -= len;
+    if (ret < MAVLINK_MSG_LOG_DATA_FIELD_DATA_LEN || _log_data_remaining == 0) {
+        transfer_activity = IDLE;
         _log_sending_link = nullptr;
     }
     return true;
 }
-
-#endif

@@ -25,15 +25,15 @@
 #include "UDPDevice.h"
 
 #include <GCS_MAVLink/GCS.h>
-#if HAL_GCS_ENABLED
 #include <AP_HAL/utility/packetise.h>
-#endif
 
 extern const AP_HAL::HAL& hal;
 
 using namespace Linux;
 
 UARTDriver::UARTDriver(bool default_console) :
+    device_path(nullptr),
+    _packetise(false),
     _device{new ConsoleDevice()}
 {
     if (default_console) {
@@ -49,7 +49,15 @@ void UARTDriver::set_device_path(const char *path)
     device_path = path;
 }
 
-void UARTDriver::_begin(uint32_t b, uint16_t rxS, uint16_t txS)
+/*
+  open the tty
+ */
+void UARTDriver::begin(uint32_t b)
+{
+    begin(b, 0, 0);
+}
+
+void UARTDriver::begin(uint32_t b, uint16_t rxS, uint16_t txS)
 {
     if (!_initialised) {
         if (device_path == nullptr && _console) {
@@ -71,9 +79,7 @@ void UARTDriver::_begin(uint32_t b, uint16_t rxS, uint16_t txS)
 
     if (!_connected) {
         _connected = _device->open();
-        if (_connected) {
-            _device->set_blocking(false);
-        }
+        _device->set_blocking(false);
     }
     _initialised = false;
 
@@ -181,9 +187,7 @@ AP_HAL::OwnPtr<SerialDevice> UARTDriver::_parseDevicePath(const char *arg)
 
     if (strcmp(protocol, "udp") == 0 || strcmp(protocol, "udpin") == 0) {
         bool bcast = (_flag && strcmp(_flag, "bcast") == 0);
-#if HAL_GCS_ENABLED
         _packetise = true;
-#endif
         if (strcmp(protocol, "udp") == 0) {
             device = new UDPDevice(_ip, _base_port, bcast, false);
         } else {
@@ -205,7 +209,7 @@ AP_HAL::OwnPtr<SerialDevice> UARTDriver::_parseDevicePath(const char *arg)
 /*
   shutdown a UART
  */
-void UARTDriver::_end()
+void UARTDriver::end()
 {
     _initialised = false;
     _connected = false;
@@ -219,7 +223,7 @@ void UARTDriver::_end()
 }
 
 
-void UARTDriver::_flush()
+void UARTDriver::flush()
 {
     // we are not doing any buffering, so flush is a no-op
 }
@@ -235,6 +239,15 @@ bool UARTDriver::is_initialized()
 
 
 /*
+  enable or disable blocking writes
+ */
+void UARTDriver::set_blocking_writes(bool blocking)
+{
+    _nonblocking_writes = !blocking;
+}
+
+
+/*
   do we have any bytes pending transmission?
  */
 bool UARTDriver::tx_pending()
@@ -245,7 +258,7 @@ bool UARTDriver::tx_pending()
 /*
   return the number of bytes available to be read
  */
-uint32_t UARTDriver::_available()
+uint32_t UARTDriver::available()
 {
     if (!_initialised) {
         return 0;
@@ -264,34 +277,64 @@ uint32_t UARTDriver::txspace()
     return _writebuf.space();
 }
 
-ssize_t UARTDriver::_read(uint8_t *buffer, uint16_t count)
+int16_t UARTDriver::read()
 {
     if (!_initialised) {
-        return 0;
+        return -1;
     }
 
-    return _readbuf.read(buffer, count);
-}
-
-bool UARTDriver::_discard_input()
-{
-    if (!_initialised) {
-        return false;
+    uint8_t byte;
+    if (!_readbuf.read_byte(&byte)) {
+        return -1;
     }
-    _readbuf.clear();
-    return true;
+
+    return byte;
 }
 
-/*
-  write size bytes to the write buffer
- */
-size_t UARTDriver::_write(const uint8_t *buffer, size_t size)
+/* Linux implementations of Print virtual methods */
+size_t UARTDriver::write(uint8_t c)
 {
     if (!_initialised) {
         return 0;
     }
     if (!_write_mutex.take_nonblocking()) {
         return 0;
+    }
+
+    while (_writebuf.space() == 0) {
+        if (_nonblocking_writes) {
+            _write_mutex.give();
+            return 0;
+        }
+        hal.scheduler->delay(1);
+    }
+    size_t ret = _writebuf.write(&c, 1);
+    _write_mutex.give();
+    return ret;
+}
+
+/*
+  write size bytes to the write buffer
+ */
+size_t UARTDriver::write(const uint8_t *buffer, size_t size)
+{
+    if (!_initialised) {
+        return 0;
+    }
+    if (!_write_mutex.take_nonblocking()) {
+        return 0;
+    }
+    if (!_nonblocking_writes) {
+        /*
+          use the per-byte delay loop in write() above for blocking writes
+         */
+        _write_mutex.give();
+        size_t ret = 0;
+        while (size--) {
+            if (write(*buffer++) != 1) break;
+            ret++;
+        }
+        return ret;
     }
 
     size_t ret = _writebuf.write(buffer, size);
@@ -337,12 +380,10 @@ bool UARTDriver::_write_pending_bytes(void)
     uint32_t available_bytes = _writebuf.available();
     uint16_t n = available_bytes;
 
-#if HAL_GCS_ENABLED
     if (_packetise && n > 0) {
         // send on MAVLink packet boundaries if possible
         n = mavlink_packetise(_writebuf, n);
     }
-#endif
 
     if (n > 0) {
         int ret;
@@ -442,11 +483,4 @@ uint64_t UARTDriver::receive_time_constraint_us(uint16_t nbytes)
         last_receive_us -= transport_time_us;
     }
     return last_receive_us;
-}
-
-uint32_t UARTDriver::bw_in_bytes_per_second() const
-{
-    // if connected, assume at least a 10/100Mbps connection
-    const uint32_t bitrate = (_connected && _ip != nullptr) ? 10E6 : _baudrate;
-    return bitrate/10; // convert bits to bytes minus overhead
 }

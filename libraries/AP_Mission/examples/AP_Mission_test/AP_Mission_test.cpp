@@ -29,7 +29,7 @@ private:
     AP_Baro baro;
     AP_GPS  gps;
     Compass compass;
-    AP_AHRS ahrs{};
+    AP_AHRS_DCM ahrs{};
     GCS_Dummy _gcs;
 
     // global constants that control how many verify calls must be made for a command before it completes

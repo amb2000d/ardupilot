@@ -4,8 +4,6 @@
   UAVCAN
  */
 
-#pragma once
-
 #define APP_BOOTLOADER_COMMS_MAGIC 0xc544ad9a
 
 struct app_bootloader_comms {

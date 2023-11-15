@@ -15,8 +15,6 @@
 
 #include "PixRacerLED.h"
 
-#include <AP_HAL/HAL.h>
-
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
 
 #ifndef HAL_GPIO_A_LED_PIN
@@ -36,7 +34,7 @@ PixRacerLED::PixRacerLED() :
 {
 }
 
-bool PixRacerLED::init(void)
+bool PixRacerLED::hw_init(void)
 {
     // when HAL_GPIO_LED_ON is 0 then we must not use pinMode()
     // as it could remove the OPENDRAIN attribute on the pin
@@ -60,6 +58,6 @@ bool PixRacerLED::hw_set_rgb(uint8_t r, uint8_t g, uint8_t b)
 }
 
 #else
-bool PixRacerLED::init(void) { return true; }
+bool PixRacerLED::hw_init(void) { return true; }
 bool PixRacerLED::hw_set_rgb(uint8_t r, uint8_t g, uint8_t b) { return true; }
 #endif

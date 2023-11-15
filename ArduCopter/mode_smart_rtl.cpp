@@ -16,16 +16,16 @@ bool ModeSmartRTL::init(bool ignore_checks)
         wp_nav->wp_and_spline_init();
 
         // set current target to a reasonable stopping point
-        Vector3p stopping_point;
-        pos_control->get_stopping_point_xy_cm(stopping_point.xy());
-        pos_control->get_stopping_point_z_cm(stopping_point.z);
-        wp_nav->set_wp_destination(stopping_point.tofloat());
+        Vector3f stopping_point;
+        pos_control->get_stopping_point_xy(stopping_point);
+        pos_control->get_stopping_point_z(stopping_point);
+        wp_nav->set_wp_destination(stopping_point);
 
         // initialise yaw to obey user parameter
         auto_yaw.set_mode_to_default(true);
 
         // wait for cleanup of return path
-        smart_rtl_state = SubMode::WAIT_FOR_PATH_CLEANUP;
+        smart_rtl_state = SmartRTL_WaitForPathCleanup;
         return true;
     }
 
@@ -41,27 +41,22 @@ void ModeSmartRTL::exit()
 void ModeSmartRTL::run()
 {
     switch (smart_rtl_state) {
-        case SubMode::WAIT_FOR_PATH_CLEANUP:
+        case SmartRTL_WaitForPathCleanup:
             wait_cleanup_run();
             break;
-        case SubMode::PATH_FOLLOW:
+        case SmartRTL_PathFollow:
             path_follow_run();
             break;
-        case SubMode::PRELAND_POSITION:
+        case SmartRTL_PreLandPosition:
             pre_land_position_run();
             break;
-        case SubMode::DESCEND:
+        case SmartRTL_Descend:
             descent_run(); // Re-using the descend method from normal rtl mode.
             break;
-        case SubMode::LAND:
+        case SmartRTL_Land:
             land_run(true); // Re-using the land method from normal rtl mode.
             break;
     }
-}
-
-bool ModeSmartRTL::is_landing() const
-{
-    return smart_rtl_state == SubMode::LAND;
 }
 
 void ModeSmartRTL::wait_cleanup_run()
@@ -70,51 +65,48 @@ void ModeSmartRTL::wait_cleanup_run()
     motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     wp_nav->update_wpnav();
     pos_control->update_z_controller();
-    attitude_control->input_thrust_vector_heading(pos_control->get_thrust_vector(), auto_yaw.get_heading());
+    attitude_control->input_euler_angle_roll_pitch_yaw(wp_nav->get_roll(), wp_nav->get_pitch(), auto_yaw.yaw(),true);
 
     // check if return path is computed and if yes, begin journey home
     if (g2.smart_rtl.request_thorough_cleanup()) {
         path_follow_last_pop_fail_ms = 0;
-        smart_rtl_state = SubMode::PATH_FOLLOW;
+        smart_rtl_state = SmartRTL_PathFollow;
     }
 }
 
 void ModeSmartRTL::path_follow_run()
 {
+    float target_yaw_rate = 0.0f;
+    if (!copter.failsafe.radio) {
+        // get pilot's desired yaw rate
+        target_yaw_rate = get_pilot_desired_yaw_rate(channel_yaw->get_control_in());
+        if (!is_zero(target_yaw_rate)) {
+            auto_yaw.set_mode(AUTO_YAW_HOLD);
+        }
+    }
+
     // if we are close to current target point, switch the next point to be our target.
     if (wp_nav->reached_wp_destination()) {
-        Vector3f dest_NED;
+        Vector3f next_point;
         // this pop_point can fail if the IO task currently has the
         // path semaphore.
-        if (g2.smart_rtl.pop_point(dest_NED)) {
+        if (g2.smart_rtl.pop_point(next_point)) {
             path_follow_last_pop_fail_ms = 0;
+            bool fast_waypoint = true;
             if (g2.smart_rtl.get_num_points() == 0) {
                 // this is the very last point, add 2m to the target alt and move to pre-land state
-                dest_NED.z -= 2.0f;
-                smart_rtl_state = SubMode::PRELAND_POSITION;
-                wp_nav->set_wp_destination_NED(dest_NED);
-            } else {
-                // peek at the next point.  this can fail if the IO task currently has the path semaphore
-                Vector3f next_dest_NED;
-                if (g2.smart_rtl.peek_point(next_dest_NED)) {
-                    wp_nav->set_wp_destination_NED(dest_NED);
-                    if (g2.smart_rtl.get_num_points() == 1) {
-                        // this is the very last point, add 2m to the target alt
-                        next_dest_NED.z -= 2.0f;
-                    }
-                    wp_nav->set_wp_destination_next_NED(next_dest_NED);
-                } else {
-                    // this can only happen if peek failed to take the semaphore
-                    // send next point anyway which will cause the vehicle to slow at the next point
-                    wp_nav->set_wp_destination_NED(dest_NED);
-                    INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
-                }
+                next_point.z -= 2.0f;
+                smart_rtl_state = SmartRTL_PreLandPosition;
+                fast_waypoint = false;
             }
+            // send target to waypoint controller
+            wp_nav->set_wp_destination_NED(next_point);
+            wp_nav->set_fast_waypoint(fast_waypoint);
         } else if (g2.smart_rtl.get_num_points() == 0) {
             // We should never get here; should always have at least
             // two points and the "zero points left" is handled above.
             INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
-            smart_rtl_state = SubMode::PRELAND_POSITION;
+            smart_rtl_state = SmartRTL_PreLandPosition;
         } else if (path_follow_last_pop_fail_ms == 0) {
             // first time we've failed to pop off (ever, or after a success)
             path_follow_last_pop_fail_ms = AP_HAL::millis();
@@ -122,7 +114,7 @@ void ModeSmartRTL::path_follow_run()
             // we failed to pop a point off for 10 seconds.  This is
             // almost certainly a bug.
             INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
-            smart_rtl_state = SubMode::PRELAND_POSITION;
+            smart_rtl_state = SmartRTL_PreLandPosition;
         }
     }
 
@@ -131,8 +123,14 @@ void ModeSmartRTL::path_follow_run()
     wp_nav->update_wpnav();
     pos_control->update_z_controller();
 
-    // call attitude controller with auto yaw
-    attitude_control->input_thrust_vector_heading(pos_control->get_thrust_vector(), auto_yaw.get_heading());
+    // call attitude controller
+    if (auto_yaw.mode() == AUTO_YAW_HOLD) {
+        // roll & pitch from waypoint controller, yaw rate from pilot
+        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(wp_nav->get_roll(), wp_nav->get_pitch(), target_yaw_rate);
+    } else {
+        // roll, pitch from waypoint controller, yaw heading from auto_heading()
+        attitude_control->input_euler_angle_roll_pitch_yaw(wp_nav->get_roll(), wp_nav->get_pitch(), auto_yaw.yaw(), true);
+    }
 }
 
 void ModeSmartRTL::pre_land_position_run()
@@ -142,11 +140,11 @@ void ModeSmartRTL::pre_land_position_run()
         // choose descend and hold, or land based on user parameter rtl_alt_final
         if (g.rtl_alt_final <= 0 || copter.failsafe.radio) {
             land_start();
-            smart_rtl_state = SubMode::LAND;
+            smart_rtl_state = SmartRTL_Land;
         } else {
             set_descent_target_alt(copter.g.rtl_alt_final);
             descent_start();
-            smart_rtl_state = SubMode::DESCEND;
+            smart_rtl_state = SmartRTL_Descend;
         }
     }
 
@@ -154,27 +152,27 @@ void ModeSmartRTL::pre_land_position_run()
     motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     wp_nav->update_wpnav();
     pos_control->update_z_controller();
-    attitude_control->input_thrust_vector_heading(pos_control->get_thrust_vector(), auto_yaw.get_heading());
+    attitude_control->input_euler_angle_roll_pitch_yaw(wp_nav->get_roll(), wp_nav->get_pitch(), auto_yaw.yaw(), true);
 }
 
 // save current position for use by the smart_rtl flight mode
 void ModeSmartRTL::save_position()
 {
-    const bool should_save_position = motors->armed() && (copter.flightmode->mode_number() != Mode::Number::SMART_RTL);
+    const bool should_save_position = motors->armed() && (copter.control_mode != Mode::Number::SMART_RTL);
 
     copter.g2.smart_rtl.update(copter.position_ok(), should_save_position);
 }
 
-bool ModeSmartRTL::get_wp(Location& destination) const
+bool ModeSmartRTL::get_wp(Location& destination)
 {
     // provide target in states which use wp_nav
     switch (smart_rtl_state) {
-    case SubMode::WAIT_FOR_PATH_CLEANUP:
-    case SubMode::PATH_FOLLOW:
-    case SubMode::PRELAND_POSITION:
-    case SubMode::DESCEND:
-        return wp_nav->get_wp_destination_loc(destination);
-    case SubMode::LAND:
+    case SmartRTL_WaitForPathCleanup:
+    case SmartRTL_PathFollow:
+    case SmartRTL_PreLandPosition:
+    case SmartRTL_Descend:
+        return wp_nav->get_wp_destination(destination);
+    case SmartRTL_Land:
         return false;
     }
 
@@ -190,13 +188,6 @@ uint32_t ModeSmartRTL::wp_distance() const
 int32_t ModeSmartRTL::wp_bearing() const
 {
     return wp_nav->get_wp_bearing_to_destination();
-}
-
-bool ModeSmartRTL::use_pilot_yaw() const
-{
-    const bool land_repositioning = g.land_repositioning && (smart_rtl_state == SubMode::DESCEND);
-    const bool final_landing = smart_rtl_state == SubMode::LAND;
-    return g2.smart_rtl.use_pilot_yaw() || land_repositioning || final_landing;
 }
 
 #endif

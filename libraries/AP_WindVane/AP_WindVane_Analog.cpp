@@ -15,16 +15,7 @@
 
 #include "AP_WindVane_Analog.h"
 
-#include <AP_HAL/AP_HAL.h>
-#include <GCS_MAVLink/GCS.h>
-
-extern const AP_HAL::HAL& hal;
-
 #define WINDVANE_CALIBRATION_VOLT_DIFF_MIN  1.0f    // calibration routine's min voltage difference required for success
-
-#include <AP_HAL/AP_HAL.h>
-
-extern const AP_HAL::HAL& hal;
 
 // constructor
 AP_WindVane_Analog::AP_WindVane_Analog(AP_WindVane &frontend) :
@@ -35,16 +26,13 @@ AP_WindVane_Analog::AP_WindVane_Analog(AP_WindVane &frontend) :
 
 void AP_WindVane_Analog::update_direction()
 {
-    if (!_dir_analog_source->set_pin(_frontend._dir_analog_pin)) {
-        // pin invalid, don't have health monitoring to report yet
-        return;
-    }
-    _current_analog_voltage = _dir_analog_source->voltage_latest();
+    _dir_analog_source->set_pin(_frontend._dir_analog_pin);
+    _current_analog_voltage = _dir_analog_source->voltage_average_ratiometric();
 
     const float voltage_ratio = linear_interpolate(0.0f, 1.0f, _current_analog_voltage, _frontend._dir_analog_volt_min, _frontend._dir_analog_volt_max);
     const float direction = (voltage_ratio * radians(360 - _frontend._dir_analog_deadzone)) + radians(_frontend._dir_analog_bearing_offset);
 
-    _frontend._direction_apparent_raw  = wrap_PI(direction);
+    direction_update_frontend(wrap_PI(direction + AP::ahrs().yaw));
 }
 
 void AP_WindVane_Analog::calibrate()

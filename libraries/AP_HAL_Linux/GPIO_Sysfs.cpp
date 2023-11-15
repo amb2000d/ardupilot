@@ -21,7 +21,7 @@
 
 using namespace Linux;
 
-extern const AP_HAL::HAL& hal;
+static const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 
 #define UINT32_MAX_STR "4294967295"
 

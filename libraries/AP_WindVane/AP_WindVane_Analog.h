@@ -16,6 +16,11 @@
 
 #include "AP_WindVane_Backend.h"
 
+#include <GCS_MAVLink/GCS.h>
+#include <AP_HAL/AP_HAL.h>
+
+extern const AP_HAL::HAL& hal;
+
 class AP_WindVane_Analog : public AP_WindVane_Backend
 {
 public:
@@ -28,7 +33,7 @@ public:
 
 private:
     // pin for reading analog voltage
-    class AP_HAL::AnalogSource *_dir_analog_source;
+    AP_HAL::AnalogSource *_dir_analog_source;
 
     float _current_analog_voltage;
     uint32_t  _cal_start_ms = 0;

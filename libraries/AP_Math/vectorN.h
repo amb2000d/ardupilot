@@ -36,9 +36,7 @@ class VectorN
 public:
     // trivial ctor
     inline VectorN<T,N>() {
-        for (auto i = 0; i < N; i++) {
-            _v[i] = T{};
-        }
+        memset(_v, 0, sizeof(T)*N);
     }
 
     // vector ctor
@@ -171,6 +169,6 @@ public:
         }
     }
 
-protected:
+private:
     T _v[N];
 };

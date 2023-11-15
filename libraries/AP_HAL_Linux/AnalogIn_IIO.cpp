@@ -98,10 +98,10 @@ float AnalogSource_IIO::voltage_latest()
     return _latest;
 }
 
-bool AnalogSource_IIO::set_pin(uint8_t pin)
+void AnalogSource_IIO::set_pin(uint8_t pin)
 {
     if (_pin == pin) {
-        return true;
+        return;
     }
 
     WITH_SEMAPHORE(_semaphore);
@@ -112,7 +112,6 @@ bool AnalogSource_IIO::set_pin(uint8_t pin)
     _latest = 0;
     _value = 0;
     select_pin();
-    return true;
 }
 
 AnalogIn_IIO::AnalogIn_IIO()

@@ -25,23 +25,17 @@ void init()
     gettimeofday(&state.start_time, nullptr);
 }
 
-#if defined(__CYGWIN__) || defined(__CYGWIN64__) || defined(CYGWIN_BUILD)
 void panic(const char *errormsg, ...)
-#else
-void WEAK panic(const char *errormsg, ...)
-#endif
 {
     va_list ap;
 
     fflush(stdout);
-    printf("PANIC: ");
     va_start(ap, errormsg);
     vprintf(errormsg, ap);
     va_end(ap);
     printf("\n");
 
     dump_stack_trace();
-    dump_core_file();
 
     if (getenv("SITL_PANIC_EXIT")) {
         // this is used on the autotest server to prevent us waiting
@@ -52,54 +46,47 @@ void WEAK panic(const char *errormsg, ...)
 }
 
 // partly flogged from: https://github.com/tridge/junkcode/blob/master/segv_handler/segv_handler.c
-static void run_command_on_ownpid(const char *commandname)
+void dump_stack_trace()
 {
     // find dumpstack command:
-    const char *command_filepath = commandname; // if we can't find it trust in PATH
+    const char *dumpstack = "dumpstack"; // if we can't find it trust in PATH
     struct stat statbuf;
     const char *paths[] {
-        "Tools/scripts/%s",
-        "APM/Tools/scripts/%s", // for autotest server
-        "../Tools/scripts/%s", // when run from e.g. ArduCopter subdirectory
+        "Tools/scripts/dumpstack",
+        "APM/Tools/scripts/dumpstack", // for autotest server
     };
-    char buffer[60];
     for (uint8_t i=0; i<ARRAY_SIZE(paths); i++) {
-        // form up a filepath from each path and commandname; if it
-        // exists, use it
-        snprintf(buffer, sizeof(buffer), paths[i], commandname);
-        if (::stat(buffer, &statbuf) != -1) {
-            command_filepath = buffer;
+        if (::stat(paths[i], &statbuf) != -1) {
+            dumpstack = paths[i];
             break;
         }
     }
 
+    char cmd[100];
 	char progname[100];
-	int n = readlink("/proc/self/exe", progname, sizeof(progname)-1);
+	char *p;
+	int n;
+
+	n = readlink("/proc/self/exe", progname, sizeof(progname)-1);
 	if (n == -1) {
         strncpy(progname, "unknown", sizeof(progname));
         n = strlen(progname);
 	}
 	progname[n] = 0;
 
-	char *p = strrchr(progname, '/');
-    if (p != nullptr) {
-	    *p = 0;
-    } else {
-        p = progname;
-    }
+	p = strrchr(progname, '/');
+	*p = 0;
 
-    char output_filepath[80];
+    char output_filepath[30];
     snprintf(output_filepath,
              ARRAY_SIZE(output_filepath),
-             "%s_%s.%d.out",
-             commandname,
+             "segv_%s.%d.out",
              p+1,
              (int)getpid());
-    char cmd[200];
 	snprintf(cmd,
              sizeof(cmd),
              "sh %s %d >%s 2>&1",
-             command_filepath,
+             dumpstack,
              (int)getpid(),
              output_filepath);
     fprintf(stderr, "Running: %s\n", cmd);
@@ -108,8 +95,8 @@ static void run_command_on_ownpid(const char *commandname)
         fprintf(stderr, "Failed\n");
         return;
     }
-    fprintf(stderr, "%s has been run.  Output was:\n", commandname);
-    fprintf(stderr, "-------------- begin %s output ----------------\n", commandname);
+    fprintf(stderr, "Stack dumped\n");
+
     // print the trace on stderr:
     int fd = open(output_filepath, O_RDONLY);
     if (fd == -1) {
@@ -131,16 +118,7 @@ static void run_command_on_ownpid(const char *commandname)
             break;
         }
     }
-    fprintf(stderr, "-------------- end %s output ----------------\n", commandname);
     close(fd);
-}
-void dump_stack_trace()
-{
-    run_command_on_ownpid("dumpstack.sh");
-}
-void dump_core_file()
-{
-    run_command_on_ownpid("dumpcore.sh");
 }
 
 uint32_t micros()

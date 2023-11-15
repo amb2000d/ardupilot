@@ -36,8 +36,7 @@ Plane::Plane(const char *frame_str) :
     frame_height = 0.1f;
 
     ground_behavior = GROUND_BEHAVIOR_FWD_ONLY;
-    lock_step_scheduled = true;
-
+    
     if (strstr(frame_str, "-heavy")) {
         mass = 8;
     }
@@ -71,8 +70,8 @@ Plane::Plane(const char *frame_str) :
     }
     if (strstr(frame_str, "-throw")) {
         have_launcher = true;
-        launch_accel = 25;
-        launch_time = 0.4;
+        launch_accel = 10;
+        launch_time = 1;
     }
     if (strstr(frame_str, "-tailsitter")) {
         tailsitter = true;
@@ -80,21 +79,8 @@ Plane::Plane(const char *frame_str) :
         thrust_scale *= 1.5;
     }
 
-    if (strstr(frame_str, "-3d")) {
-        aerobatic = true;
-        thrust_scale *= 1.5;
-        // setup parameters for plane-3d
-        AP_Param::load_defaults_file("@ROMFS/models/plane.parm", false);
-        AP_Param::load_defaults_file("@ROMFS/models/plane-3d.parm", false);
-    }
-    
     if (strstr(frame_str, "-ice")) {
         ice_engine = true;
-    }
-
-    if (strstr(frame_str, "-soaring")) {
-        mass = 2.0;
-        coefficient.c_drag_p = 0.05;
     }
 }
 
@@ -148,7 +134,7 @@ Vector3f Plane::getTorque(float inputAileron, float inputElevator, float inputRu
 	//calculate aerodynamic torque
     float effective_airspeed = airspeed;
 
-    if (tailsitter || aerobatic) {
+    if (tailsitter) {
         /*
           tailsitters get airspeed from prop-wash
          */
@@ -202,7 +188,7 @@ Vector3f Plane::getTorque(float inputAileron, float inputElevator, float inputRu
 	}
 
 
-	// Add torque to force misalignment with CG
+	// Add torque to to force misalignment with CG
 	// r x F, where r is the distance from CoG to CoL
 	la +=  CGOffset.y * force.z - CGOffset.z * force.y;
 	ma += -CGOffset.x * force.z + CGOffset.z * force.x;
@@ -266,7 +252,7 @@ Vector3f Plane::getForce(float inputAileron, float inputElevator, float inputRud
     return Vector3f(ax, ay, az);
 }
 
-void Plane::calculate_forces(const struct sitl_input &input, Vector3f &rot_accel)
+void Plane::calculate_forces(const struct sitl_input &input, Vector3f &rot_accel, Vector3f &body_accel)
 {
     float aileron  = filtered_servo_angle(input, 0);
     float elevator = filtered_servo_angle(input, 1);
@@ -316,9 +302,6 @@ void Plane::calculate_forces(const struct sitl_input &input, Vector3f &rot_accel
     
     float thrust     = throttle;
 
-    battery_voltage = sitl->batt_voltage - 0.7*throttle;
-    battery_current = (battery_voltage/sitl->batt_voltage)*50.0f*sq(throttle);
-
     if (ice_engine) {
         thrust = icengine.update(input);
     }
@@ -327,7 +310,7 @@ void Plane::calculate_forces(const struct sitl_input &input, Vector3f &rot_accel
     angle_of_attack = atan2f(velocity_air_bf.z, velocity_air_bf.x);
     beta = atan2f(velocity_air_bf.y,velocity_air_bf.x);
 
-    if (tailsitter || aerobatic) {
+    if (tailsitter) {
         /*
           tailsitters get 4x the control surfaces
          */
@@ -349,8 +332,8 @@ void Plane::calculate_forces(const struct sitl_input &input, Vector3f &rot_accel
                 launch_start_ms = now;
             }
             if (now - launch_start_ms < launch_time*1000) {
-                force.x += mass * launch_accel;
-                force.z += mass * launch_accel/3;
+                force.x += launch_accel;
+                force.z += launch_accel/3;
             }
         } else {
             // allow reset of catapult
@@ -359,8 +342,7 @@ void Plane::calculate_forces(const struct sitl_input &input, Vector3f &rot_accel
     }
     
     // simulate engine RPM
-    motor_mask |= (1U<<2);
-    rpm[2] = thrust * 7000;
+    rpm1 = thrust * 7000;
     
     // scale thrust to newtons
     thrust *= thrust_scale;
@@ -389,7 +371,7 @@ void Plane::update(const struct sitl_input &input)
 
     update_wind(input);
     
-    calculate_forces(input, rot_accel);
+    calculate_forces(input, rot_accel, accel_body);
     
     update_dynamics(rot_accel);
     update_external_payload(input);

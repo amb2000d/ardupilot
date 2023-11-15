@@ -36,13 +36,6 @@ const AP_Param::GroupInfo AP_SmartRTL::var_info[] = {
     // @RebootRequired: True
     AP_GROUPINFO("POINTS", 1, AP_SmartRTL, _points_max, SMARTRTL_POINTS_DEFAULT),
 
-    // @Param: OPTIONS
-    // @DisplayName: SmartRTL options
-    // @Description: Bitmask of SmartRTL options.
-    // @Bitmask: 2:Ignore pilot yaw
-    // @User: Standard
-    AP_GROUPINFO("OPTIONS", 2, AP_SmartRTL, _options, 0),
-
     AP_GROUPEND
 };
 
@@ -99,7 +92,7 @@ void AP_SmartRTL::init()
     }
 
     // constrain the path length, in case the user decided to make the path unreasonably long.
-    _points_max.set(constrain_int16(_points_max, 0, SMARTRTL_POINTS_MAX));
+    _points_max = constrain_int16(_points_max, 0, SMARTRTL_POINTS_MAX);
 
     // check if user has disabled SmartRTL
     if (_points_max == 0 || !is_positive(_accuracy)) {
@@ -170,33 +163,6 @@ bool AP_SmartRTL::pop_point(Vector3f& point)
     return true;
 }
 
-// peek at next point on the path without removing it form the path. Returns true on success
-bool AP_SmartRTL::peek_point(Vector3f& point)
-{
-    // check we are active
-    if (!_active) {
-        return false;
-    }
-
-    // get semaphore
-    if (!_path_sem.take_nonblocking()) {
-        log_action(SRTL_PEEK_FAILED_NO_SEMAPHORE);
-        return false;
-    }
-
-    // check we have another point
-    if (_path_points_count == 0) {
-        _path_sem.give();
-        return false;
-    }
-
-    // return last point
-    point = _path[_path_points_count-1];
-
-    _path_sem.give();
-    return true;
-}
-
 // clear return path and set home location.  This should be called as part of the arming procedure
 void AP_SmartRTL::set_home(bool position_ok)
 {
@@ -230,9 +196,7 @@ void AP_SmartRTL::set_home(bool position_ok, const Vector3f& current_pos)
     }
 
     // successfully added point and reset path
-    const uint32_t now = AP_HAL::millis();
-    _last_good_position_ms = now;
-    _last_position_save_ms = now;
+    _last_good_position_ms = AP_HAL::millis();
     _active = true;
     _home_saved = true;
 }
@@ -870,7 +834,7 @@ void AP_SmartRTL::deactivate(SRTL_Actions action, const char *reason)
 }
 
 // logging
-void AP_SmartRTL::log_action(SRTL_Actions action, const Vector3f &point) const
+void AP_SmartRTL::log_action(SRTL_Actions action, const Vector3f &point)
 {
     if (!_example_mode) {
         AP::logger().Write_SRTL(_active, _path_points_count, _path_points_max, action, point);
@@ -897,10 +861,3 @@ bool AP_SmartRTL::loops_overlap(const prune_loop_t &loop1, const prune_loop_t &l
     // if we got here, no overlap
     return false;
 }
-
-// returns true if pilot's yaw input should be used to adjust vehicle's heading
-bool AP_SmartRTL::use_pilot_yaw(void) const
-{
-    return (_options.get() & uint32_t(Options::IgnorePilotYaw)) == 0;
-}
-

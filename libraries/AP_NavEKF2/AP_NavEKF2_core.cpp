@@ -2,7 +2,12 @@
 
 #include "AP_NavEKF2.h"
 #include "AP_NavEKF2_core.h"
+#include <AP_AHRS/AP_AHRS.h>
+#include <AP_Vehicle/AP_Vehicle.h>
 #include <GCS_MAVLink/GCS.h>
+#include <AP_GPS/AP_GPS.h>
+
+#include <stdio.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -30,9 +35,26 @@ extern const AP_HAL::HAL& hal;
 
 // constructor
 NavEKF2_core::NavEKF2_core(NavEKF2 *_frontend) :
-    frontend(_frontend),
-    dal(AP::dal())
+    _perf_UpdateFilter(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_UpdateFilter")),
+    _perf_CovariancePrediction(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_CovariancePrediction")),
+    _perf_FuseVelPosNED(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_FuseVelPosNED")),
+    _perf_FuseMagnetometer(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_FuseMagnetometer")),
+    _perf_FuseAirspeed(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_FuseAirspeed")),
+    _perf_FuseSideslip(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_FuseSideslip")),
+    _perf_TerrainOffset(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_TerrainOffset")),
+    _perf_FuseOptFlow(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_FuseOptFlow")),
+    frontend(_frontend)
 {
+    _perf_test[0] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test0");
+    _perf_test[1] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test1");
+    _perf_test[2] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test2");
+    _perf_test[3] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test3");
+    _perf_test[4] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test4");
+    _perf_test[5] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test5");
+    _perf_test[6] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test6");
+    _perf_test[7] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test7");
+    _perf_test[8] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test8");
+    _perf_test[9] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK2_Test9");
 }
 
 // setup this core backend
@@ -42,6 +64,7 @@ bool NavEKF2_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     gyro_index_active = _imu_index;
     accel_index_active = _imu_index;
     core_index = _core_index;
+    _ahrs = frontend->_ahrs;
 
     /*
       the imu_buffer_length needs to cope with a 260ms delay at a
@@ -49,7 +72,7 @@ bool NavEKF2_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
       than 100Hz is downsampled. For 50Hz main loop rate we need a
       shorter buffer.
      */
-    if (dal.ins().get_loop_rate_hz() < 100) {
+    if (AP::ins().get_sample_rate() < 100) {
         imu_buffer_length = 13;
     } else {
         // maximum 260 msec delay at 100 Hz fusion rate
@@ -78,7 +101,7 @@ bool NavEKF2_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     if(!storedRangeBeacon.init(imu_buffer_length)) {
         return false;
     }
-    if(!storedExtNav.init(EXTNAV_BUFFER_LENGTH)) {
+    if(!storedExtNav.init(OBS_BUFFER_LENGTH)) {
         return false;
     }
     if(!storedIMU.init(imu_buffer_length)) {
@@ -87,25 +110,7 @@ bool NavEKF2_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     if(!storedOutput.init(imu_buffer_length)) {
         return false;
     }
-    if(!storedExtNavVel.init(EXTNAV_BUFFER_LENGTH)) {
-       return false;
-    }
 
-    if ((yawEstimator == nullptr) && (frontend->_gsfRunMask & (1U<<core_index))) {
-        // check if there is enough memory to create the EKF-GSF object
-        if (dal.available_memory() < sizeof(EKFGSF_yaw) + 1024) {
-            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "EKF2 IMU%u GSF: not enough memory",(unsigned)imu_index);
-            return false;
-        }
-
-        // try to instantiate
-        yawEstimator = new EKFGSF_yaw();
-        if (yawEstimator == nullptr) {
-            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "EKF2 IMU%uGSF: allocation failed",(unsigned)imu_index);
-            return false;
-        }
-    }
-    
     return true;
 }
     
@@ -118,7 +123,7 @@ bool NavEKF2_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
 void NavEKF2_core::InitialiseVariables()
 {
     // calculate the nominal filter update rate
-    const auto &ins = dal.ins();
+    const AP_InertialSensor &ins = AP::ins();
     localFilterTimeStep_ms = (uint8_t)(1000*ins.get_loop_delta_t());
     localFilterTimeStep_ms = MAX(localFilterTimeStep_ms,10);
 
@@ -133,6 +138,8 @@ void NavEKF2_core::InitialiseVariables()
     lastTasPassTime_ms = 0;
     lastYawTime_ms = imuSampleTime_ms;
     lastTimeGpsReceived_ms = 0;
+    secondLastGpsTime_ms = 0;
+    lastDecayTime_ms = imuSampleTime_ms;
     timeAtLastAuxEKF_ms = imuSampleTime_ms;
     flowValidMeaTime_ms = imuSampleTime_ms;
     rngValidMeaTime_ms = imuSampleTime_ms;
@@ -149,6 +156,7 @@ void NavEKF2_core::InitialiseVariables()
     lastVelReset_ms = 0;
     lastPosResetD_ms = 0;
     lastRngMeasTime_ms = 0;
+    terrainHgtStableSet_ms = 0;
 
     // initialise other variables
     gpsNoiseScaler = 1.0f;
@@ -174,6 +182,7 @@ void NavEKF2_core::InitialiseVariables()
     inhibitGndState = false;
     flowGyroBias.x = 0;
     flowGyroBias.y = 0;
+    heldVelNE.zero();
     PV_AidingMode = AID_NONE;
     PV_AidingModePrev = AID_NONE;
     posTimeout = true;
@@ -190,16 +199,25 @@ void NavEKF2_core::InitialiseVariables()
     inhibitWindStates = true;
     gndOffsetValid =  false;
     validOrigin = false;
+    takeoffExpectedSet_ms = 0;
+    expectGndEffectTakeoff = false;
+    touchdownExpectedSet_ms = 0;
+    expectGndEffectTouchdown = false;
     gpsSpdAccuracy = 0.0f;
     gpsPosAccuracy = 0.0f;
     gpsHgtAccuracy = 0.0f;
     baroHgtOffset = 0.0f;
-    rngOnGnd = 0.05f;
     yawResetAngle = 0.0f;
     lastYawReset_ms = 0;
     tiltErrFilt = 1.0f;
     tiltAlignComplete = false;
     stateIndexLim = 23;
+    baroStoreIndex = 0;
+    rangeStoreIndex = 0;
+    magStoreIndex = 0;
+    gpsStoreIndex = 0;
+    tasStoreIndex = 0;
+    ofStoreIndex = 0;
     delAngCorrection.zero();
     velErrintegral.zero();
     posErrintegral.zero();
@@ -207,6 +225,8 @@ void NavEKF2_core::InitialiseVariables()
     gpsNotAvailable = true;
     motorsArmed = false;
     prevMotorsArmed = false;
+    innovationIncrement = 0;
+    lastInnovation = 0;
     memset(&gpsCheckStatus, 0, sizeof(gpsCheckStatus));
     gpsSpdAccPass = false;
     ekfInnovationsPass = false;
@@ -220,7 +240,7 @@ void NavEKF2_core::InitialiseVariables()
     gpsDriftNE = 0.0f;
     gpsVertVelFilt = 0.0f;
     gpsHorizVelFilt = 0.0f;
-    ZERO_FARRAY(statesArray);
+    memset(&statesArray, 0, sizeof(statesArray));
     memset(&vertCompFiltState, 0, sizeof(vertCompFiltState));
     posVelFusionDelayed = false;
     optFlowFusionDelayed = false;
@@ -238,10 +258,10 @@ void NavEKF2_core::InitialiseVariables()
     runUpdates = false;
     framesSincePredict = 0;
     gpsYawResetRequest = false;
-    stateStruct.quat.initialise();
     quatAtLastMagReset = stateStruct.quat;
     delAngBiasLearned = false;
     memset(&filterStatus, 0, sizeof(filterStatus));
+    gpsInhibit = false;
     activeHgtSource = 0;
     memset(&rngMeasIndex, 0, sizeof(rngMeasIndex));
     memset(&storedRngMeasTime_ms, 0, sizeof(storedRngMeasTime_ms));
@@ -251,11 +271,12 @@ void NavEKF2_core::InitialiseVariables()
     ekfGpsRefHgt = 0.0;
     velOffsetNED.zero();
     posOffsetNED.zero();
-    ZERO_FARRAY(velPosObs);
+    memset(&velPosObs, 0, sizeof(velPosObs));
 
     // range beacon fusion variables
     memset((void *)&rngBcnDataNew, 0, sizeof(rngBcnDataNew));
     memset((void *)&rngBcnDataDelayed, 0, sizeof(rngBcnDataDelayed));
+    rngBcnStoreIndex = 0;
     lastRngBcnPassTime_ms = 0;
     rngBcnTestRatio = 0.0f;
     rngBcnHealth = false;
@@ -263,9 +284,7 @@ void NavEKF2_core::InitialiseVariables()
     varInnovRngBcn = 0.0f;
     innovRngBcn = 0.0f;
     memset(&lastTimeRngBcn_ms, 0, sizeof(lastTimeRngBcn_ms));
-#if AP_BEACON_ENABLED
     rngBcnDataToFuse = false;
-#endif
     beaconVehiclePosNED.zero();
     beaconVehiclePosErr = 1.0f;
     rngBcnLast3DmeasTime_ms = 0;
@@ -303,12 +322,6 @@ void NavEKF2_core::InitialiseVariables()
     extNavUsedForPos = false;
     extNavYawResetRequest = false;
 
-    extNavVelNew = {};
-    extNavVelDelayed = {};
-    extNavVelToFuse = false;
-    extNavVelMeasTime_ms = 0;
-    useExtNavVel = false;
-
     // zero data buffers
     storedIMU.reset();
     storedGPS.reset();
@@ -318,22 +331,15 @@ void NavEKF2_core::InitialiseVariables()
     storedOutput.reset();
     storedRangeBeacon.reset();
     storedExtNav.reset();
-    storedExtNavVel.reset();
 
     // now init mag variables
     yawAlignComplete = false;
     have_table_earth_field = false;
 
     // initialise pre-arm message
-    dal.snprintf(prearm_fail_string, sizeof(prearm_fail_string), "EKF2 still initialising");
+    hal.util->snprintf(prearm_fail_string, sizeof(prearm_fail_string), "EKF2 still initialising");
 
     InitialiseVariablesMag();
-
-    // emergency reset of yaw to EKFGSF estimate
-    EKFGSF_yaw_reset_ms = 0;
-    EKFGSF_yaw_reset_request_ms = 0;
-    EKFGSF_yaw_reset_count = 0;
-    EKFGSF_run_filterbank = false;
 }
 
 
@@ -347,12 +353,13 @@ void NavEKF2_core::InitialiseVariablesMag()
     magYawResetTimer_ms = imuSampleTime_ms;
     magTimeout = false;
     allMagSensorsFailed = false;
+    badMagYaw = false;
     finalInflightYawInit = false;
     finalInflightMagInit = false;
 
     inhibitMagStates = true;
 
-    magSelectIndex = dal.compass().get_first_usable();
+    magSelectIndex = 0;
     lastMagOffsetsValid = false;
     magStateResetRequest = false;
     magStateInitComplete = false;
@@ -370,8 +377,8 @@ void NavEKF2_core::InitialiseVariablesMag()
 bool NavEKF2_core::InitialiseFilterBootstrap(void)
 {
     // If we are a plane and don't have GPS lock then don't initialise
-    if (assume_zero_sideslip() && dal.gps().status(dal.gps().primary_sensor()) < AP_DAL_GPS::GPS_OK_FIX_3D) {
-        dal.snprintf(prearm_fail_string,
+    if (assume_zero_sideslip() && AP::gps().status() < AP_GPS::GPS_OK_FIX_3D) {
+        hal.util->snprintf(prearm_fail_string,
                            sizeof(prearm_fail_string),
                            "EKF2 init failure: No GPS lock");
         statesInitialised = false;
@@ -392,7 +399,7 @@ bool NavEKF2_core::InitialiseFilterBootstrap(void)
     // set re-used variables to zero
     InitialiseVariables();
 
-    const auto &ins = dal.ins();
+    const AP_InertialSensor &ins = AP::ins();
 
     // Initialise IMU data
     dtIMUavg = ins.get_loop_delta_t();
@@ -401,24 +408,24 @@ bool NavEKF2_core::InitialiseFilterBootstrap(void)
     imuDataDelayed = imuDataNew;
 
     // acceleration vector in XYZ body axes measured by the IMU (m/s^2)
-    Vector3F initAccVec;
+    Vector3f initAccVec;
 
     // TODO we should average accel readings over several cycles
-    initAccVec = ins.get_accel(accel_index_active).toftype();
+    initAccVec = ins.get_accel(accel_index_active);
 
     // read the magnetometer data
     readMagData();
 
     // normalise the acceleration vector
-    ftype pitch=0, roll=0;
+    float pitch=0, roll=0;
     if (initAccVec.length() > 0.001f) {
         initAccVec.normalize();
 
         // calculate initial pitch angle
-        pitch = asinF(initAccVec.x);
+        pitch = asinf(initAccVec.x);
 
         // calculate initial roll angle
-        roll = atan2F(-initAccVec.y , -initAccVec.z);
+        roll = atan2f(-initAccVec.y , -initAccVec.z);
     }
 
     // calculate initial roll and pitch orientation
@@ -449,7 +456,7 @@ bool NavEKF2_core::InitialiseFilterBootstrap(void)
     ResetHeight();
 
     // define Earth rotation vector in the NED navigation frame
-    calcEarthRateNED(earthRateNED, dal.get_home().lat);
+    calcEarthRateNED(earthRateNED, _ahrs->get_home().lat);
 
     // initialise the covariance matrix
     CovarianceInit();
@@ -535,8 +542,9 @@ void NavEKF2_core::UpdateFilter(bool predict)
 #if ENABLE_EKF_TIMING
     void *istate = hal.scheduler->disable_interrupts_save();
     static uint32_t timing_start_us;
-    timing_start_us = dal.micros();
+    timing_start_us = AP_HAL::micros();
 #endif
+    hal.util->perf_begin(_perf_UpdateFilter);
 
     fill_scratch_variables();
 
@@ -559,26 +567,14 @@ void NavEKF2_core::UpdateFilter(bool predict)
         // Predict the covariance growth
         CovariancePrediction();
 
-        // Run the IMU prediction step for the GSF yaw estimator algorithm
-        // using IMU and optionally true airspeed data.
-        // Must be run before SelectMagFusion() to provide an up to date yaw estimate
-        runYawEstimatorPrediction();
-
         // Update states using  magnetometer data
         SelectMagFusion();
 
         // Update states using GPS and altimeter data
         SelectVelPosFusion();
 
-        // Run the GPS velocity correction step for the GSF yaw estimator algorithm
-        // and use the yaw estimate to reset the main EKF yaw if requested
-        // Muat be run after SelectVelPosFusion() so that fresh GPS data is available
-        runYawEstimatorCorrection();
-
-#if AP_BEACON_ENABLED
         // Update states using range beacon data
         SelectRngBcnFusion();
-#endif
 
         // Update states using optical flow data
         SelectFlowFusion();
@@ -597,12 +593,13 @@ void NavEKF2_core::UpdateFilter(bool predict)
     calcOutputStates();
 
     // stop the timer used for load measurement
+    hal.util->perf_end(_perf_UpdateFilter);
 #if ENABLE_EKF_TIMING
     static uint32_t total_us;
     static uint32_t timing_counter;
-    total_us += dal.micros() - timing_start_us;
+    total_us += AP_HAL::micros() - timing_start_us;
     if (timing_counter++ == 4000) {
-        DEV_PRINTF("ekf2 avg %.2f us\n", total_us / float(timing_counter));
+        hal.console->printf("ekf2 avg %.2f us\n", total_us / float(timing_counter));
         total_us = 0;
         timing_counter = 0;
     }
@@ -617,14 +614,14 @@ void NavEKF2_core::UpdateFilter(bool predict)
       it try again.
      */
     if (filterStatus.value != 0) {
-        last_filter_ok_ms = dal.millis();
+        last_filter_ok_ms = AP_HAL::millis();
     }
     if (filterStatus.value == 0 &&
         last_filter_ok_ms != 0 &&
-        dal.millis() - last_filter_ok_ms > 5000 &&
-        !dal.get_armed()) {
+        AP_HAL::millis() - last_filter_ok_ms > 5000 &&
+        !hal.util->get_soft_armed()) {
         // we've been unhealthy for 5 seconds after being healthy, reset the filter
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "EKF2 IMU%u forced reset",(unsigned)imu_index);
+        gcs().send_text(MAV_SEVERITY_WARNING, "EKF2 IMU%u forced reset",(unsigned)imu_index);
         last_filter_ok_ms = 0;
         statesInitialised = false;
         InitialiseFilterBootstrap();
@@ -632,7 +629,7 @@ void NavEKF2_core::UpdateFilter(bool predict)
     
 }
 
-void NavEKF2_core::correctDeltaAngle(Vector3F &delAng, ftype delAngDT, uint8_t gyro_index)
+void NavEKF2_core::correctDeltaAngle(Vector3f &delAng, float delAngDT, uint8_t gyro_index)
 {
     delAng.x = delAng.x * stateStruct.gyro_scale.x;
     delAng.y = delAng.y * stateStruct.gyro_scale.y;
@@ -640,7 +637,7 @@ void NavEKF2_core::correctDeltaAngle(Vector3F &delAng, ftype delAngDT, uint8_t g
     delAng -= inactiveBias[gyro_index].gyro_bias * (delAngDT / dtEkfAvg);
 }
 
-void NavEKF2_core::correctDeltaVelocity(Vector3F &delVel, ftype delVelDT, uint8_t accel_index)
+void NavEKF2_core::correctDeltaVelocity(Vector3f &delVel, float delVelDT, uint8_t accel_index)
 {
     delVel.z -= inactiveBias[accel_index].accel_zbias * (delVelDT / dtEkfAvg);
 }
@@ -665,11 +662,11 @@ void NavEKF2_core::UpdateStrapdownEquationsNED()
     // use the nav frame from previous time step as the delta velocities
     // have been rotated into that frame
     // * and + operators have been overloaded
-    Vector3F delVelNav;  // delta velocity vector in earth axes
+    Vector3f delVelNav;  // delta velocity vector in earth axes
     delVelNav  = prevTnb.mul_transpose(delVelCorrected);
     delVelNav.z += GRAVITY_MSS*imuDataDelayed.delVelDT;
 
-    // calculate the nav to body cosine matrix
+    // calculate the body to nav cosine matrix
     stateStruct.quat.inverse().rotation_matrix(prevTnb);
 
     // calculate the rate of change of velocity (used for launch detect and other functions)
@@ -681,18 +678,18 @@ void NavEKF2_core::UpdateStrapdownEquationsNED()
     // calculate a magnitude of the filtered nav acceleration (required for GPS
     // variance estimation)
     accNavMag = velDotNEDfilt.length();
-    accNavMagHoriz = velDotNEDfilt.xy().length();
+    accNavMagHoriz = norm(velDotNEDfilt.x , velDotNEDfilt.y);
 
     // if we are not aiding, then limit the horizontal magnitude of acceleration
     // to prevent large manoeuvre transients disturbing the attitude
     if ((PV_AidingMode == AID_NONE) && (accNavMagHoriz > 5.0f)) {
-        ftype gain = 5.0f/accNavMagHoriz;
+        float gain = 5.0f/accNavMagHoriz;
         delVelNav.x *= gain;
         delVelNav.y *= gain;
     }
 
     // save velocity for use in trapezoidal integration for position calcuation
-    Vector3F lastVelocity = stateStruct.velocity;
+    Vector3f lastVelocity = stateStruct.velocity;
 
     // sum delta velocities to get velocity
     stateStruct.velocity += delVelNav;
@@ -723,16 +720,16 @@ void NavEKF2_core::UpdateStrapdownEquationsNED()
 void NavEKF2_core::calcOutputStates()
 {
     // apply corrections to the IMU data
-    Vector3F delAngNewCorrected = imuDataNew.delAng;
-    Vector3F delVelNewCorrected = imuDataNew.delVel;
+    Vector3f delAngNewCorrected = imuDataNew.delAng;
+    Vector3f delVelNewCorrected = imuDataNew.delVel;
     correctDeltaAngle(delAngNewCorrected, imuDataNew.delAngDT, imuDataNew.gyro_index);
     correctDeltaVelocity(delVelNewCorrected, imuDataNew.delVelDT, imuDataNew.accel_index);
 
     // apply corections to track EKF solution
-    Vector3F delAng = delAngNewCorrected + delAngCorrection;
+    Vector3f delAng = delAngNewCorrected + delAngCorrection;
 
     // convert the rotation vector to its equivalent quaternion
-    QuaternionF deltaQuat;
+    Quaternion deltaQuat;
     deltaQuat.from_axis_angle(delAng);
 
     // update the quaternion states by rotating from the previous attitude through
@@ -741,15 +738,15 @@ void NavEKF2_core::calcOutputStates()
     outputDataNew.quat.normalize();
 
     // calculate the body to nav cosine matrix
-    Matrix3F Tbn_temp;
+    Matrix3f Tbn_temp;
     outputDataNew.quat.rotation_matrix(Tbn_temp);
 
     // transform body delta velocities to delta velocities in the nav frame
-    Vector3F delVelNav  = Tbn_temp*delVelNewCorrected;
+    Vector3f delVelNav  = Tbn_temp*delVelNewCorrected;
     delVelNav.z += GRAVITY_MSS*imuDataNew.delVelDT;
 
     // save velocity for use in trapezoidal integration for position calcuation
-    Vector3F lastVelocity = outputDataNew.velocity;
+    Vector3f lastVelocity = outputDataNew.velocity;
 
     // sum delta velocities to get velocity
     outputDataNew.velocity += delVelNav;
@@ -762,14 +759,14 @@ void NavEKF2_core::calcOutputStates()
 
     // Perform filter calculation using backwards Euler integration
     // Coefficients selected to place all three filter poles at omega
-    const ftype CompFiltOmega = M_2PI * constrain_ftype(frontend->_hrt_filt_freq, 0.1f, 30.0f);
-    ftype omega2 = CompFiltOmega * CompFiltOmega;
-    ftype pos_err = constrain_ftype(outputDataNew.position.z - vertCompFiltState.pos, -1e5, 1e5);
-    ftype integ1_input = pos_err * omega2 * CompFiltOmega * imuDataNew.delVelDT;
+    const float CompFiltOmega = M_2PI * constrain_float(frontend->_hrt_filt_freq, 0.1f, 30.0f);
+    float omega2 = CompFiltOmega * CompFiltOmega;
+    float pos_err = outputDataNew.position.z - vertCompFiltState.pos;
+    float integ1_input = pos_err * omega2 * CompFiltOmega * imuDataNew.delVelDT;
     vertCompFiltState.acc += integ1_input;
-    ftype integ2_input = delVelNav.z + (vertCompFiltState.acc + pos_err * omega2 * 3.0f) * imuDataNew.delVelDT;
+    float integ2_input = delVelNav.z + (vertCompFiltState.acc + pos_err * omega2 * 3.0f) * imuDataNew.delVelDT;
     vertCompFiltState.vel += integ2_input;
-    ftype integ3_input = (vertCompFiltState.vel + pos_err * CompFiltOmega * 3.0f) * imuDataNew.delVelDT;
+    float integ3_input = (vertCompFiltState.vel + pos_err * CompFiltOmega * 3.0f) * imuDataNew.delVelDT;
     vertCompFiltState.pos += integ3_input; 
 
     // apply a trapezoidal integration to velocities to calculate position
@@ -782,11 +779,11 @@ void NavEKF2_core::calcOutputStates()
     if (!accelPosOffset.is_zero()) {
         // calculate the average angular rate across the last IMU update
         // note delAngDT is prevented from being zero in readIMUData()
-        Vector3F angRate = imuDataNew.delAng * (1.0f/imuDataNew.delAngDT);
+        Vector3f angRate = imuDataNew.delAng * (1.0f/imuDataNew.delAngDT);
 
         // Calculate the velocity of the body frame origin relative to the IMU in body frame
         // and rotate into earth frame. Note % operator has been overloaded to perform a cross product
-        Vector3F velBodyRelIMU = angRate % (- accelPosOffset);
+        Vector3f velBodyRelIMU = angRate % (- accelPosOffset);
         velOffsetNED = Tbn_temp * velBodyRelIMU;
 
         // calculate the earth frame position of the body frame origin relative to the IMU
@@ -807,12 +804,12 @@ void NavEKF2_core::calcOutputStates()
         // compare quaternion data with EKF quaternion at the fusion time horizon and calculate correction
 
         // divide the demanded quaternion by the estimated to get the error
-        QuaternionF quatErr = stateStruct.quat / outputDataDelayed.quat;
+        Quaternion quatErr = stateStruct.quat / outputDataDelayed.quat;
 
         // Convert to a delta rotation using a small angle approximation
         quatErr.normalize();
-        Vector3F deltaAngErr;
-        ftype scaler;
+        Vector3f deltaAngErr;
+        float scaler;
         if (quatErr[0] >= 0.0f) {
             scaler = 2.0f;
         } else {
@@ -824,17 +821,17 @@ void NavEKF2_core::calcOutputStates()
 
         // calculate a gain that provides tight tracking of the estimator states and
         // adjust for changes in time delay to maintain consistent damping ratio of ~0.7
-        ftype timeDelay = 1e-3f * (float)(imuDataNew.time_ms - imuDataDelayed.time_ms);
-        timeDelay = fmaxF(timeDelay, dtIMUavg);
-        ftype errorGain = 0.5f / timeDelay;
+        float timeDelay = 1e-3f * (float)(imuDataNew.time_ms - imuDataDelayed.time_ms);
+        timeDelay = fmaxf(timeDelay, dtIMUavg);
+        float errorGain = 0.5f / timeDelay;
 
         // calculate a corrrection to the delta angle
         // that will cause the INS to track the EKF quaternions
         delAngCorrection = deltaAngErr * errorGain * dtIMUavg;
 
         // calculate velocity and position tracking errors
-        Vector3F velErr = (stateStruct.velocity - outputDataDelayed.velocity);
-        Vector3F posErr = (stateStruct.position - outputDataDelayed.position);
+        Vector3f velErr = (stateStruct.velocity - outputDataDelayed.velocity);
+        Vector3f posErr = (stateStruct.position - outputDataDelayed.position);
 
         // collect magnitude tracking error for diagnostics
         outputTrackError.x = deltaAngErr.length();
@@ -842,16 +839,16 @@ void NavEKF2_core::calcOutputStates()
         outputTrackError.z = posErr.length();
 
         // convert user specified time constant from centi-seconds to seconds
-        ftype tauPosVel = constrain_ftype(0.01f*(ftype)frontend->_tauVelPosOutput, 0.1f, 0.5f);
+        float tauPosVel = constrain_float(0.01f*(float)frontend->_tauVelPosOutput, 0.1f, 0.5f);
 
         // calculate a gain to track the EKF position states with the specified time constant
-        ftype velPosGain = dtEkfAvg / constrain_ftype(tauPosVel, dtEkfAvg, 10.0f);
+        float velPosGain = dtEkfAvg / constrain_float(tauPosVel, dtEkfAvg, 10.0f);
 
         // use a PI feedback to calculate a correction that will be applied to the output state history
         posErrintegral += posErr;
         velErrintegral += velErr;
-        Vector3F velCorrection = velErr * velPosGain + velErrintegral * sq(velPosGain) * 0.1f;
-        Vector3F posCorrection = posErr * velPosGain + posErrintegral * sq(velPosGain) * 0.1f;
+        Vector3f velCorrection = velErr * velPosGain + velErrintegral * sq(velPosGain) * 0.1f;
+        Vector3f posCorrection = posErr * velPosGain + posErrintegral * sq(velPosGain) * 0.1f;
 
         // loop through the output filter state history and apply the corrections to the velocity and position states
         // this method is too expensive to use for the attitude states due to the quaternion operations required
@@ -884,35 +881,36 @@ void NavEKF2_core::calcOutputStates()
 */
 void NavEKF2_core::CovariancePrediction()
 {
-    ftype windVelSigma; // wind velocity 1-sigma process noise - m/s
-    ftype dAngBiasSigma;// delta angle bias 1-sigma process noise - rad/s
-    ftype dVelBiasSigma;// delta velocity bias 1-sigma process noise - m/s
-    ftype dAngScaleSigma;// delta angle scale factor 1-Sigma process noise
-    ftype magEarthSigma;// earth magnetic field 1-sigma process noise
-    ftype magBodySigma; // body magnetic field 1-sigma process noise
-    ftype daxNoise;     // X axis delta angle noise variance rad^2
-    ftype dayNoise;     // Y axis delta angle noise variance rad^2
-    ftype dazNoise;     // Z axis delta angle noise variance rad^2
-    ftype dvxNoise;     // X axis delta velocity variance noise (m/s)^2
-    ftype dvyNoise;     // Y axis delta velocity variance noise (m/s)^2
-    ftype dvzNoise;     // Z axis delta velocity variance noise (m/s)^2
-    ftype dvx;          // X axis delta velocity (m/s)
-    ftype dvy;          // Y axis delta velocity (m/s)
-    ftype dvz;          // Z axis delta velocity (m/s)
-    ftype dax;          // X axis delta angle (rad)
-    ftype day;          // Y axis delta angle (rad)
-    ftype daz;          // Z axis delta angle (rad)
-    ftype q0;           // attitude quaternion
-    ftype q1;           // attitude quaternion
-    ftype q2;           // attitude quaternion
-    ftype q3;           // attitude quaternion
-    ftype dax_b;        // X axis delta angle measurement bias (rad)
-    ftype day_b;        // Y axis delta angle measurement bias (rad)
-    ftype daz_b;        // Z axis delta angle measurement bias (rad)
-    ftype dax_s;        // X axis delta angle measurement scale factor
-    ftype day_s;        // Y axis delta angle measurement scale factor
-    ftype daz_s;        // Z axis delta angle measurement scale factor
-    ftype dvz_b;        // Z axis delta velocity measurement bias (rad)
+    hal.util->perf_begin(_perf_CovariancePrediction);
+    float windVelSigma; // wind velocity 1-sigma process noise - m/s
+    float dAngBiasSigma;// delta angle bias 1-sigma process noise - rad/s
+    float dVelBiasSigma;// delta velocity bias 1-sigma process noise - m/s
+    float dAngScaleSigma;// delta angle scale factor 1-Sigma process noise
+    float magEarthSigma;// earth magnetic field 1-sigma process noise
+    float magBodySigma; // body magnetic field 1-sigma process noise
+    float daxNoise;     // X axis delta angle noise variance rad^2
+    float dayNoise;     // Y axis delta angle noise variance rad^2
+    float dazNoise;     // Z axis delta angle noise variance rad^2
+    float dvxNoise;     // X axis delta velocity variance noise (m/s)^2
+    float dvyNoise;     // Y axis delta velocity variance noise (m/s)^2
+    float dvzNoise;     // Z axis delta velocity variance noise (m/s)^2
+    float dvx;          // X axis delta velocity (m/s)
+    float dvy;          // Y axis delta velocity (m/s)
+    float dvz;          // Z axis delta velocity (m/s)
+    float dax;          // X axis delta angle (rad)
+    float day;          // Y axis delta angle (rad)
+    float daz;          // Z axis delta angle (rad)
+    float q0;           // attitude quaternion
+    float q1;           // attitude quaternion
+    float q2;           // attitude quaternion
+    float q3;           // attitude quaternion
+    float dax_b;        // X axis delta angle measurement bias (rad)
+    float day_b;        // Y axis delta angle measurement bias (rad)
+    float daz_b;        // Z axis delta angle measurement bias (rad)
+    float dax_s;        // X axis delta angle measurement scale factor
+    float day_s;        // Y axis delta angle measurement scale factor
+    float daz_s;        // Z axis delta angle measurement scale factor
+    float dvz_b;        // Z axis delta velocity measurement bias (rad)
     Vector25 SF;
     Vector5 SG;
     Vector8 SQ;
@@ -923,21 +921,21 @@ void NavEKF2_core::CovariancePrediction()
     // this allows for wind gradient effects.
     // filter height rate using a 10 second time constant filter
     dt = imuDataDelayed.delAngDT;
-    ftype alpha = 0.1f * dt;
+    float alpha = 0.1f * dt;
     hgtRate = hgtRate * (1.0f - alpha) - stateStruct.velocity.z * alpha;
 
     // use filtered height rate to increase wind process noise when climbing or descending
     // this allows for wind gradient effects.
-    windVelSigma  = dt * constrain_ftype(frontend->_windVelProcessNoise, 0.0f, 1.0f) * (1.0f + constrain_ftype(frontend->_wndVarHgtRateScale, 0.0f, 1.0f) * fabsF(hgtRate));
-    dAngBiasSigma = sq(dt) * constrain_ftype(frontend->_gyroBiasProcessNoise, 0.0f, 1.0f);
-    dVelBiasSigma = sq(dt) * constrain_ftype(frontend->_accelBiasProcessNoise, 0.0f, 1.0f);
-    dAngScaleSigma = dt * constrain_ftype(frontend->_gyroScaleProcessNoise, 0.0f, 1.0f);
-    magEarthSigma = dt * constrain_ftype(frontend->_magEarthProcessNoise, 0.0f, 1.0f);
-    magBodySigma  = dt * constrain_ftype(frontend->_magBodyProcessNoise, 0.0f, 1.0f);
+    windVelSigma  = dt * constrain_float(frontend->_windVelProcessNoise, 0.0f, 1.0f) * (1.0f + constrain_float(frontend->_wndVarHgtRateScale, 0.0f, 1.0f) * fabsf(hgtRate));
+    dAngBiasSigma = sq(dt) * constrain_float(frontend->_gyroBiasProcessNoise, 0.0f, 1.0f);
+    dVelBiasSigma = sq(dt) * constrain_float(frontend->_accelBiasProcessNoise, 0.0f, 1.0f);
+    dAngScaleSigma = dt * constrain_float(frontend->_gyroScaleProcessNoise, 0.0f, 1.0f);
+    magEarthSigma = dt * constrain_float(frontend->_magEarthProcessNoise, 0.0f, 1.0f);
+    magBodySigma  = dt * constrain_float(frontend->_magBodyProcessNoise, 0.0f, 1.0f);
     for (uint8_t i= 0; i<=8;  i++) processNoise[i] = 0.0f;
     for (uint8_t i=9; i<=11; i++) processNoise[i] = dAngBiasSigma;
     for (uint8_t i=12; i<=14; i++) processNoise[i] = dAngScaleSigma;
-    if (dal.get_takeoff_expected()) {
+    if (expectGndEffectTakeoff) {
         processNoise[15] = 0.0f;
     } else {
         processNoise[15] = dVelBiasSigma;
@@ -966,9 +964,9 @@ void NavEKF2_core::CovariancePrediction()
     day_s = stateStruct.gyro_scale.y;
     daz_s = stateStruct.gyro_scale.z;
     dvz_b = stateStruct.accel_zbias;
-    ftype _gyrNoise = constrain_ftype(frontend->_gyrNoise, 0.0f, 1.0f);
+    float _gyrNoise = constrain_float(frontend->_gyrNoise, 0.0f, 1.0f);
     daxNoise = dayNoise = dazNoise = sq(dt*_gyrNoise);
-    ftype _accNoise = constrain_ftype(frontend->_accNoise, 0.0f, 10.0f);
+    float _accNoise = constrain_float(frontend->_accNoise, 0.0f, 10.0f);
     dvxNoise = dvyNoise = dvzNoise = sq(dt*_accNoise);
 
     // calculate the predicted covariance due to inertial sensor error propagation
@@ -1046,23 +1044,6 @@ void NavEKF2_core::CovariancePrediction()
         zeroRows(P,22,23);
         zeroCols(P,22,23);
     }
-
-    if (!inhibitMagStates && lastInhibitMagStates) {
-        // when starting 3D fusion we want to reset body mag variances
-        needMagBodyVarReset = true;
-    }
-
-    if (needMagBodyVarReset) {
-        // reset body mag variances
-        needMagBodyVarReset = false;
-        zeroCols(P,19,21);
-        zeroRows(P,19,21);
-        P[19][19] = sq(frontend->_magNoise);
-        P[20][20] = P[19][19];
-        P[21][21] = P[19][19];
-    }
-
-    lastInhibitMagStates = inhibitMagStates;
 
     nextP[0][0] = daxNoise*SQ[3] + SPP[5]*(P[0][0]*SPP[5] - P[1][0]*SPP[4] + P[9][0]*SPP[22] + P[12][0]*SPP[18] + P[2][0]*(2*q1*SF[3] - 2*q2*SF[4] - 2*q3*SF[5] + 2*q0*SF[9])) - SPP[4]*(P[0][1]*SPP[5] - P[1][1]*SPP[4] + P[9][1]*SPP[22] + P[12][1]*SPP[18] + P[2][1]*(2*q1*SF[3] - 2*q2*SF[4] - 2*q3*SF[5] + 2*q0*SF[9])) + SPP[8]*(P[0][2]*SPP[5] + P[2][2]*SPP[8] + P[9][2]*SPP[22] + P[12][2]*SPP[18] - P[1][2]*(2*q0*SF[6] - 2*q3*SF[7] - 2*q1*SF[10] + 2*q2*SF[12])) + SPP[22]*(P[0][9]*SPP[5] - P[1][9]*SPP[4] + P[9][9]*SPP[22] + P[12][9]*SPP[18] + P[2][9]*(2*q1*SF[3] - 2*q2*SF[4] - 2*q3*SF[5] + 2*q0*SF[9])) + SPP[18]*(P[0][12]*SPP[5] - P[1][12]*SPP[4] + P[9][12]*SPP[22] + P[12][12]*SPP[18] + P[2][12]*(2*q1*SF[3] - 2*q2*SF[4] - 2*q3*SF[5] + 2*q0*SF[9]));
     nextP[0][1] = SPP[6]*(P[0][1]*SPP[5] - P[1][1]*SPP[4] + P[2][1]*SPP[8] + P[9][1]*SPP[22] + P[12][1]*SPP[18]) - SPP[2]*(P[0][0]*SPP[5] - P[1][0]*SPP[4] + P[2][0]*SPP[8] + P[9][0]*SPP[22] + P[12][0]*SPP[18]) + SPP[22]*(P[0][10]*SPP[5] - P[1][10]*SPP[4] + P[2][10]*SPP[8] + P[9][10]*SPP[22] + P[12][10]*SPP[18]) + SPP[17]*(P[0][13]*SPP[5] - P[1][13]*SPP[4] + P[2][13]*SPP[8] + P[9][13]*SPP[22] + P[12][13]*SPP[18]) - (2*q0*SF[5] - 2*q1*SF[4] - 2*q2*SF[3] + 2*q3*SF[9])*(P[0][2]*SPP[5] - P[1][2]*SPP[4] + P[2][2]*SPP[8] + P[9][2]*SPP[22] + P[12][2]*SPP[18]);
@@ -1407,6 +1388,8 @@ void NavEKF2_core::CovariancePrediction()
 
     // constrain diagonals to prevent ill-conditioning
     ConstrainVariances();
+
+    hal.util->perf_end(_perf_CovariancePrediction);
 }
 
 // zero specified range of rows in the state covariance matrix
@@ -1415,7 +1398,7 @@ void NavEKF2_core::zeroRows(Matrix24 &covMat, uint8_t first, uint8_t last)
     uint8_t row;
     for (row=first; row<=last; row++)
     {
-        zero_range(&covMat[row][0], 0, 23);
+        memset(&covMat[row][0], 0, sizeof(covMat[0][0])*24);
     }
 }
 
@@ -1425,7 +1408,7 @@ void NavEKF2_core::zeroCols(Matrix24 &covMat, uint8_t first, uint8_t last)
     uint8_t row;
     for (row=0; row<=23; row++)
     {
-        zero_range(&covMat[row][0], first, last);
+        memset(&covMat[row][first], 0, sizeof(covMat[0][0])*(1+last-first));
     }
 }
 
@@ -1457,7 +1440,7 @@ void NavEKF2_core::StoreQuatReset()
 }
 
 // Rotate the stored output quaternion history through a quaternion rotation
-void NavEKF2_core::StoreQuatRotate(const QuaternionF &deltaQuat)
+void NavEKF2_core::StoreQuatRotate(const Quaternion &deltaQuat)
 {
     outputDataNew.quat = outputDataNew.quat*deltaQuat;
     // write current measurement to entire table
@@ -1467,6 +1450,13 @@ void NavEKF2_core::StoreQuatRotate(const QuaternionF &deltaQuat)
     outputDataDelayed.quat = outputDataDelayed.quat*deltaQuat;
 }
 
+// calculate nav to body quaternions from body to nav rotation matrix
+void NavEKF2_core::quat2Tbn(Matrix3f &Tbn, const Quaternion &quat) const
+{
+    // Calculate the body to nav cosine matrix
+    quat.rotation_matrix(Tbn);
+}
+
 // force symmetry on the covariance matrix to prevent ill-conditioning
 void NavEKF2_core::ForceSymmetry()
 {
@@ -1474,7 +1464,7 @@ void NavEKF2_core::ForceSymmetry()
     {
         for (uint8_t j=0; j<=i-1; j++)
         {
-            ftype temp = 0.5f*(P[i][j] + P[j][i]);
+            float temp = 0.5f*(P[i][j] + P[j][i]);
             P[i][j] = temp;
             P[j][i] = temp;
         }
@@ -1496,37 +1486,37 @@ void NavEKF2_core::CopyCovariances()
 // constrain variances (diagonal terms) in the state covariance matrix to  prevent ill-conditioning
 void NavEKF2_core::ConstrainVariances()
 {
-    for (uint8_t i=0; i<=2; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,1.0f); // attitude error
-    for (uint8_t i=3; i<=5; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,1.0e3f); // velocities
-    for (uint8_t i=6; i<=7; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,EK2_POSXY_STATE_LIMIT);
-    P[8][8] = constrain_ftype(P[8][8],0.0f,1.0e6f); // vertical position
-    for (uint8_t i=9; i<=11; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,sq(0.175f * dtEkfAvg)); // delta angle biases
+    for (uint8_t i=0; i<=2; i++) P[i][i] = constrain_float(P[i][i],0.0f,1.0f); // attitude error
+    for (uint8_t i=3; i<=5; i++) P[i][i] = constrain_float(P[i][i],0.0f,1.0e3f); // velocities
+    for (uint8_t i=6; i<=7; i++) P[i][i] = constrain_float(P[i][i],0.0f,1.0e6f);
+    P[8][8] = constrain_float(P[8][8],0.0f,1.0e6f); // vertical position
+    for (uint8_t i=9; i<=11; i++) P[i][i] = constrain_float(P[i][i],0.0f,sq(0.175f * dtEkfAvg)); // delta angle biases
     if (PV_AidingMode != AID_NONE) {
-        for (uint8_t i=12; i<=14; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,0.01f); // delta angle scale factors
+        for (uint8_t i=12; i<=14; i++) P[i][i] = constrain_float(P[i][i],0.0f,0.01f); // delta angle scale factors
     } else {
         // we can't reliably estimate scale factors when there is no aiding data due to transient manoeuvre induced innovations
         // so inhibit estimation by keeping covariance elements at zero
         zeroRows(P,12,14);
         zeroCols(P,12,14);
     }
-    P[15][15] = constrain_ftype(P[15][15],0.0f,sq(10.0f * dtEkfAvg)); // delta velocity bias
-    for (uint8_t i=16; i<=18; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,0.01f); // earth magnetic field
-    for (uint8_t i=19; i<=21; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,0.01f); // body magnetic field
-    for (uint8_t i=22; i<=23; i++) P[i][i] = constrain_ftype(P[i][i],0.0f,1.0e3f); // wind velocity
+    P[15][15] = constrain_float(P[15][15],0.0f,sq(10.0f * dtEkfAvg)); // delta velocity bias
+    for (uint8_t i=16; i<=18; i++) P[i][i] = constrain_float(P[i][i],0.0f,0.01f); // earth magnetic field
+    for (uint8_t i=19; i<=21; i++) P[i][i] = constrain_float(P[i][i],0.0f,0.01f); // body magnetic field
+    for (uint8_t i=22; i<=23; i++) P[i][i] = constrain_float(P[i][i],0.0f,1.0e3f); // wind velocity
 }
 
 // constrain states using WMM tables and specified limit
 void NavEKF2_core::MagTableConstrain(void)
 {
     // constrain to error from table earth field
-    ftype limit_ga = frontend->_mag_ef_limit * 0.001f;
-    stateStruct.earth_magfield.x = constrain_ftype(stateStruct.earth_magfield.x,
+    float limit_ga = frontend->_mag_ef_limit * 0.001f;
+    stateStruct.earth_magfield.x = constrain_float(stateStruct.earth_magfield.x,
                                                    table_earth_field_ga.x-limit_ga,
                                                    table_earth_field_ga.x+limit_ga);
-    stateStruct.earth_magfield.y = constrain_ftype(stateStruct.earth_magfield.y,
+    stateStruct.earth_magfield.y = constrain_float(stateStruct.earth_magfield.y,
                                                    table_earth_field_ga.y-limit_ga,
                                                    table_earth_field_ga.y+limit_ga);
-    stateStruct.earth_magfield.z = constrain_ftype(stateStruct.earth_magfield.z,
+    stateStruct.earth_magfield.z = constrain_float(stateStruct.earth_magfield.z,
                                                    table_earth_field_ga.z-limit_ga,
                                                    table_earth_field_ga.z+limit_ga);
 }
@@ -1535,33 +1525,33 @@ void NavEKF2_core::MagTableConstrain(void)
 void NavEKF2_core::ConstrainStates()
 {
     // attitude errors are limited between +-1
-    for (uint8_t i=0; i<=2; i++) statesArray[i] = constrain_ftype(statesArray[i],-1.0f,1.0f);
+    for (uint8_t i=0; i<=2; i++) statesArray[i] = constrain_float(statesArray[i],-1.0f,1.0f);
     // velocity limit 500 m/sec (could set this based on some multiple of max airspeed * EAS2TAS)
-    for (uint8_t i=3; i<=5; i++) statesArray[i] = constrain_ftype(statesArray[i],-5.0e2f,5.0e2f);
-    // position limit - TODO apply circular limit
-    for (uint8_t i=6; i<=7; i++) statesArray[i] = constrain_ftype(statesArray[i],-EK2_POSXY_STATE_LIMIT,EK2_POSXY_STATE_LIMIT);
+    for (uint8_t i=3; i<=5; i++) statesArray[i] = constrain_float(statesArray[i],-5.0e2f,5.0e2f);
+    // position limit 1000 km - TODO apply circular limit
+    for (uint8_t i=6; i<=7; i++) statesArray[i] = constrain_float(statesArray[i],-1.0e6f,1.0e6f);
     // height limit covers home alt on everest through to home alt at SL and ballon drop
-    stateStruct.position.z = constrain_ftype(stateStruct.position.z,-4.0e4f,1.0e4f);
+    stateStruct.position.z = constrain_float(stateStruct.position.z,-4.0e4f,1.0e4f);
     // gyro bias limit (this needs to be set based on manufacturers specs)
-    for (uint8_t i=9; i<=11; i++) statesArray[i] = constrain_ftype(statesArray[i],-GYRO_BIAS_LIMIT*dtEkfAvg,GYRO_BIAS_LIMIT*dtEkfAvg);
+    for (uint8_t i=9; i<=11; i++) statesArray[i] = constrain_float(statesArray[i],-GYRO_BIAS_LIMIT*dtEkfAvg,GYRO_BIAS_LIMIT*dtEkfAvg);
     // gyro scale factor limit of +-5% (this needs to be set based on manufacturers specs)
-    for (uint8_t i=12; i<=14; i++) statesArray[i] = constrain_ftype(statesArray[i],0.95f,1.05f);
+    for (uint8_t i=12; i<=14; i++) statesArray[i] = constrain_float(statesArray[i],0.95f,1.05f);
     // Z accel bias limit 1.0 m/s^2	(this needs to be finalised from test data)
-    stateStruct.accel_zbias = constrain_ftype(stateStruct.accel_zbias,-1.0f*dtEkfAvg,1.0f*dtEkfAvg);
+    stateStruct.accel_zbias = constrain_float(stateStruct.accel_zbias,-1.0f*dtEkfAvg,1.0f*dtEkfAvg);
 
     // earth magnetic field limit
     if (frontend->_mag_ef_limit <= 0 || !have_table_earth_field) {
         // constrain to +/-1Ga
-        for (uint8_t i=16; i<=18; i++) statesArray[i] = constrain_ftype(statesArray[i],-1.0f,1.0f);
+        for (uint8_t i=16; i<=18; i++) statesArray[i] = constrain_float(statesArray[i],-1.0f,1.0f);
     } else {
         // use table constrain
         MagTableConstrain();
     }
 
     // body magnetic field limit
-    for (uint8_t i=19; i<=21; i++) statesArray[i] = constrain_ftype(statesArray[i],-0.5f,0.5f);
+    for (uint8_t i=19; i<=21; i++) statesArray[i] = constrain_float(statesArray[i],-0.5f,0.5f);
     // wind velocity limit 100 m/s (could be based on some multiple of max airspeed * EAS2TAS) - TODO apply circular limit
-    for (uint8_t i=22; i<=23; i++) statesArray[i] = constrain_ftype(statesArray[i],-100.0f,100.0f);
+    for (uint8_t i=22; i<=23; i++) statesArray[i] = constrain_float(statesArray[i],-100.0f,100.0f);
     // constrain the terrain state to be below the vehicle height unless we are using terrain as the height datum
     if (!inhibitGndState) {
         terrainState = MAX(terrainState, stateStruct.position.z + rngOnGnd);
@@ -1569,23 +1559,23 @@ void NavEKF2_core::ConstrainStates()
 }
 
 // calculate the NED earth spin vector in rad/sec
-void NavEKF2_core::calcEarthRateNED(Vector3F &omega, int32_t latitude) const
+void NavEKF2_core::calcEarthRateNED(Vector3f &omega, int32_t latitude) const
 {
-    ftype lat_rad = radians(latitude*1.0e-7f);
-    omega.x  = earthRate*cosF(lat_rad);
+    float lat_rad = radians(latitude*1.0e-7f);
+    omega.x  = earthRate*cosf(lat_rad);
     omega.y  = 0;
-    omega.z  = -earthRate*sinF(lat_rad);
+    omega.z  = -earthRate*sinf(lat_rad);
 }
 
 // initialise the earth magnetic field states using declination, suppled roll/pitch
 // and magnetometer measurements and return initial attitude quaternion
-QuaternionF NavEKF2_core::calcQuatAndFieldStates(ftype roll, ftype pitch)
+Quaternion NavEKF2_core::calcQuatAndFieldStates(float roll, float pitch)
 {
     // declare local variables required to calculate initial orientation and magnetic field
-    ftype yaw;
-    Matrix3F Tbn;
-    Vector3F initMagNED;
-    QuaternionF initQuat;
+    float yaw;
+    Matrix3f Tbn;
+    Vector3f initMagNED;
+    Quaternion initQuat;
 
     if (use_compass()) {
         // calculate rotation matrix from body to NED frame
@@ -1598,17 +1588,17 @@ QuaternionF NavEKF2_core::calcQuatAndFieldStates(ftype roll, ftype pitch)
         initMagNED = Tbn * magDataDelayed.mag;
 
         // calculate heading of mag field rel to body heading
-        ftype magHeading = atan2F(initMagNED.y, initMagNED.x);
+        float magHeading = atan2f(initMagNED.y, initMagNED.x);
 
         // get the magnetic declination
-        ftype magDecAng = MagDeclination();
+        float magDecAng = MagDeclination();
 
         // calculate yaw angle rel to true north
         yaw = magDecAng - magHeading;
 
         // calculate initial filter quaternion states using yaw from magnetometer
         // store the yaw change so that it can be retrieved externally for use by the control loops to prevent yaw disturbances following a reset
-        Vector3F tempEuler;
+        Vector3f tempEuler;
         stateStruct.quat.to_euler(tempEuler.x, tempEuler.y, tempEuler.z);
         // this check ensures we accumulate the resets that occur within a single iteration of the EKF
         if (imuSampleTime_ms != lastYawReset_ms) {
@@ -1665,7 +1655,7 @@ QuaternionF NavEKF2_core::calcQuatAndFieldStates(ftype roll, ftype pitch)
 // zero the attitude covariances, but preserve the variances
 void NavEKF2_core::zeroAttCovOnly()
 {
-    ftype varTemp[3];
+    float varTemp[3];
     for (uint8_t index=0; index<=2; index++) {
         varTemp[index] = P[index][index];
     }

@@ -13,17 +13,12 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "AP_Proximity_config.h"
-
-#if AP_PROXIMITY_RANGEFINDER_ENABLED
-
-#include "AP_Proximity_RangeFinder.h"
-
 #include <AP_HAL/AP_HAL.h>
+#include "AP_Proximity_RangeFinder.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <AP_RangeFinder/AP_RangeFinder.h>
-#include <AP_RangeFinder/AP_RangeFinder_Backend.h>
+#include <AP_RangeFinder/RangeFinder_Backend.h>
 
 // update the state of the sensor
 void AP_Proximity_RangeFinder::update(void)
@@ -46,21 +41,14 @@ void AP_Proximity_RangeFinder::update(void)
         if (sensor->has_data()) {
             // check for horizontal range finders
             if (sensor->orientation() <= ROTATION_YAW_315) {
-                const uint8_t sector = (uint8_t)sensor->orientation();
-                const float angle = sector * 45;
-                const AP_Proximity_Boundary_3D::Face face = frontend.boundary.get_face(angle);
-                // distance in meters
-                const float distance = sensor->distance();
+                uint8_t sector = (uint8_t)sensor->orientation();
+                _angle[sector] = sector * 45;
+                _distance[sector] = sensor->distance_cm() * 0.01f;
                 _distance_min = sensor->min_distance_cm() * 0.01f;
                 _distance_max = sensor->max_distance_cm() * 0.01f;
-                if ((distance <= _distance_max) && (distance >= _distance_min) && !ignore_reading(angle, distance, false)) {
-                    frontend.boundary.set_face_attributes(face, angle, distance, state.instance);
-                    // update OA database
-                    database_push(angle, distance);
-                } else {
-                    frontend.boundary.reset_face(face, state.instance);
-                }
+                _distance_valid[sector] = (_distance[sector] >= _distance_min) && (_distance[sector] <= _distance_max);
                 _last_update_ms = now;
+                update_boundary_for_sector(sector, true);
             }
             // check upward facing range finder
             if (sensor->orientation() == ROTATION_PITCH_90) {
@@ -78,8 +66,7 @@ void AP_Proximity_RangeFinder::update(void)
     }
 
     // check for timeout and set health status
-    if ((_last_update_ms == 0 || (now - _last_update_ms > PROXIMITY_RANGEFIDER_TIMEOUT_MS)) &&
-        (_last_upward_update_ms == 0 || (now - _last_upward_update_ms > PROXIMITY_RANGEFIDER_TIMEOUT_MS))) {
+    if ((_last_update_ms == 0) || (now - _last_update_ms > PROXIMITY_RANGEFIDER_TIMEOUT_MS)) {
         set_status(AP_Proximity::Status::NoData);
     } else {
         set_status(AP_Proximity::Status::Good);
@@ -96,5 +83,3 @@ bool AP_Proximity_RangeFinder::get_upward_distance(float &distance) const
     }
     return false;
 }
-
-#endif // AP_PROXIMITY_RANGEFINDER_ENABLED

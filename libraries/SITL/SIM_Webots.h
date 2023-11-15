@@ -17,15 +17,6 @@
 */
 
 #pragma once
-
-#include <AP_HAL/AP_HAL_Boards.h>
-
-#ifndef HAL_SIM_WEBOTS_ENABLED
-#define HAL_SIM_WEBOTS_ENABLED (CONFIG_HAL_BOARD == HAL_BOARD_SITL)
-#endif
-
-#if HAL_SIM_WEBOTS_ENABLED
-
 #include <cmath>
 #include <AP_HAL/utility/Socket.h>
 #include "SIM_Aircraft.h"
@@ -53,7 +44,6 @@ public:
     
 
 private:
-
     const char *webots_ip = "127.0.0.1";
 
     // assume sensors are streamed on port 5599
@@ -81,7 +71,12 @@ private:
 
     SocketAPM *sim_sock;
 
+    uint32_t no_data_counter;
     uint32_t connect_counter;
+
+    double initial_time_s;
+    double extrapolated_s;
+    double average_frame_time_s;
 
     uint64_t socket_frame_counter;
     uint64_t last_socket_frame_counter;
@@ -144,5 +139,3 @@ private:
 
 
 } // namespace SITL
-
-#endif // HAL_SIM_WEBOTS_ENABLED

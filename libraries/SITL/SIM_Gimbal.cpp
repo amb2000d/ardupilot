@@ -18,8 +18,6 @@
 
 #include "SIM_Gimbal.h"
 
-#if HAL_SIM_GIMBAL_ENABLED
-
 #include <stdio.h>
 
 #include "SIM_Aircraft.h"
@@ -27,14 +25,6 @@
 #include <AP_InertialSensor/AP_InertialSensor.h>
 
 extern const AP_HAL::HAL& hal;
-
-#define GIMBAL_DEBUG 0
-
-#if GIMBAL_DEBUG
-#define debug(fmt, args...)  do { printf("GIMBAL: " fmt, ##args); } while(0)
-#else
-#define debug(fmt, args...)  do { } while(0)
-#endif
 
 namespace SITL {
 
@@ -229,17 +219,20 @@ struct gimbal_param *Gimbal::param_find(const char *name)
 void Gimbal::param_send(const struct gimbal_param *p)
 {
     mavlink_message_t msg;
-    mavlink_param_value_t param_value{};
-    strncpy_noterm(param_value.param_id, p->name, sizeof(param_value.param_id));
+    mavlink_param_value_t param_value;
+    strncpy(param_value.param_id, p->name, sizeof(param_value.param_id));
     param_value.param_value = p->value;
     param_value.param_count = 0;
     param_value.param_index = 0;
     param_value.param_type = MAV_PARAM_TYPE_REAL32;
 
-    uint16_t len = mavlink_msg_param_value_encode_status(vehicle_system_id,
-                                                         vehicle_component_id,
-                                                         &mavlink.status,
-                                                         &msg, &param_value);
+    mavlink_status_t *chan0_status = mavlink_get_channel_status(MAVLINK_COMM_0);
+    uint8_t saved_seq = chan0_status->current_tx_seq;
+    chan0_status->current_tx_seq = mavlink.seq;
+    uint16_t len = mavlink_msg_param_value_encode(vehicle_system_id,
+                                                  vehicle_component_id,
+                                                  &msg, &param_value);
+    chan0_status->current_tx_seq = saved_seq;
 
     uint8_t msgbuf[len];
     len = mavlink_msg_to_send_buffer(msgbuf, &msg);
@@ -292,7 +285,7 @@ void Gimbal::send_report(void)
                 case MAVLINK_MSG_ID_HEARTBEAT: {
                     mavlink_heartbeat_t pkt;
                     mavlink_msg_heartbeat_decode(&msg, &pkt);
-                    debug("got HB type=%u autopilot=%u base_mode=0x%x\n", pkt.type, pkt.autopilot, pkt.base_mode);
+                    printf("Gimbal: got HB type=%u autopilot=%u base_mode=0x%x\n", pkt.type, pkt.autopilot, pkt.base_mode);
                     if (!seen_heartbeat) {
                         seen_heartbeat = true;
                         vehicle_component_id = msg.compid;
@@ -341,7 +334,7 @@ void Gimbal::send_report(void)
                     break;
                 }
                 default:
-                    debug("got unexpected msg %u\n", msg.msgid);
+                    printf("Gimbal got unexpected msg %u\n", msg.msgid);
                     break;
                 }
             }
@@ -363,10 +356,17 @@ void Gimbal::send_report(void)
         heartbeat.mavlink_version = 0;
         heartbeat.custom_mode = 0;
 
-        len = mavlink_msg_heartbeat_encode_status(vehicle_system_id,
-                                                  vehicle_component_id,
-                                                  &mavlink.status,
-                                                  &msg, &heartbeat);
+        /*
+          save and restore sequence number for chan0, as it is used by
+          generated encode functions
+         */
+        mavlink_status_t *chan0_status = mavlink_get_channel_status(MAVLINK_COMM_0);
+        uint8_t saved_seq = chan0_status->current_tx_seq;
+        chan0_status->current_tx_seq = mavlink.seq;
+        len = mavlink_msg_heartbeat_encode(vehicle_system_id,
+                                           vehicle_component_id,
+                                           &msg, &heartbeat);
+        chan0_status->current_tx_seq = saved_seq;
 
         mav_socket.send(&msg.magic, len);
         last_heartbeat_ms = now;
@@ -393,10 +393,13 @@ void Gimbal::send_report(void)
         gimbal_report.joint_el = joint_angles.y;
         gimbal_report.joint_az = joint_angles.z;
 
-        len = mavlink_msg_gimbal_report_encode_status(vehicle_system_id,
-                                                      vehicle_component_id,
-                                                      &mavlink.status,
-                                                      &msg, &gimbal_report);
+        mavlink_status_t *chan0_status = mavlink_get_channel_status(MAVLINK_COMM_0);
+        uint8_t saved_seq = chan0_status->current_tx_seq;
+        chan0_status->current_tx_seq = mavlink.seq;
+        len = mavlink_msg_gimbal_report_encode(vehicle_system_id,
+                                               vehicle_component_id,
+                                               &msg, &gimbal_report);
+        chan0_status->current_tx_seq = saved_seq;
 
         uint8_t msgbuf[len];
         len = mavlink_msg_to_send_buffer(msgbuf, &msg);
@@ -410,5 +413,3 @@ void Gimbal::send_report(void)
 }
 
 } // namespace SITL
-
-#endif  // HAL_SIM_GIMBAL_ENABLED

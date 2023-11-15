@@ -3,13 +3,7 @@
  */
 
 #include <AP_HAL/AP_HAL.h>
-#include <AP_RangeFinder/AP_RangeFinder_Backend.h>
-#include <GCS_MAVLink/GCS_Dummy.h>
-
-const struct AP_Param::GroupInfo        GCS_MAVLINK_Parameters::var_info[] = {
-    AP_GROUPEND
-};
-GCS_Dummy _gcs;
+#include <AP_RangeFinder/RangeFinder_Backend.h>
 
 void setup();
 void loop();
@@ -25,7 +19,7 @@ void setup()
     hal.console->printf("Range Finder library test\n");
 
     // setup for analog pin 13
-    AP_Param::set_object_value(&sonar, sonar.var_info, "_TYPE", (uint8_t)RangeFinder::Type::PLI2C);
+    AP_Param::set_object_value(&sonar, sonar.var_info, "_TYPE", RangeFinder::RangeFinder_TYPE_PLI2C);
     AP_Param::set_object_value(&sonar, sonar.var_info, "_PIN", -1.0f);
     AP_Param::set_object_value(&sonar, sonar.var_info, "_SCALING", 1.0f);
 

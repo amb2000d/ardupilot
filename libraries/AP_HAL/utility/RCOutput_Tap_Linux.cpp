@@ -23,7 +23,6 @@
 #include <asm/termbits.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <asm/ioctls.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 

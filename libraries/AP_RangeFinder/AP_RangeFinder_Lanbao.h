@@ -1,43 +1,34 @@
 #pragma once
 
-#include "AP_RangeFinder_config.h"
+#include "RangeFinder.h"
+#include "RangeFinder_Backend.h"
 
-#if AP_RANGEFINDER_LANBAO_ENABLED
-
-#include "AP_RangeFinder.h"
-#include "AP_RangeFinder_Backend_Serial.h"
-
-class AP_RangeFinder_Lanbao : public AP_RangeFinder_Backend_Serial
+class AP_RangeFinder_Lanbao : public AP_RangeFinder_Backend
 {
 
 public:
+    // constructor
+    AP_RangeFinder_Lanbao(RangeFinder::RangeFinder_State &_state,
+                          AP_RangeFinder_Params &_params,
+                          uint8_t serial_instance);
 
-    static AP_RangeFinder_Backend_Serial *create(
-        RangeFinder::RangeFinder_State &_state,
-        AP_RangeFinder_Params &_params) {
-        return new AP_RangeFinder_Lanbao(_state, _params);
-    }
+    // static detection function
+    static bool detect(uint8_t serial_instance);
 
-    // Lanbao is always 115200:
-    uint32_t initial_baudrate(uint8_t serial_instance) const override {
-        return 115200;
-    }
+    // update state
+    void update(void) override;
 
 protected:
 
-    MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const override {
+    virtual MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const override {
         return MAV_DISTANCE_SENSOR_LASER;
     }
 
 private:
-
-    using AP_RangeFinder_Backend_Serial::AP_RangeFinder_Backend_Serial;
-
     // get a reading
-    bool get_reading(float &reading_m) override;
+    bool get_reading(uint16_t &reading_cm);
 
+    AP_HAL::UARTDriver *uart = nullptr;
     uint8_t buf[6];
     uint8_t buf_len = 0;
 };
-
-#endif  // AP_RANGEFINDER_LANBAO_ENABLED

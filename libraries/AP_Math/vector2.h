@@ -29,14 +29,8 @@
 ****************************************/
 #pragma once
 
-#ifndef MATH_CHECK_INDEXES
-#define MATH_CHECK_INDEXES 0
-#endif
-
 #include <cmath>
-#include <float.h>
 #include <AP_Common/AP_Common.h>
-#include "ftype.h"
 
 template <typename T>
 struct Vector2
@@ -52,6 +46,12 @@ struct Vector2
     constexpr Vector2<T>(const T x0, const T y0)
         : x(x0)
         , y(y0) {}
+
+    // function call operator
+    void operator ()(const T x0, const T y0)
+    {
+        x= x0; y= y0;
+    }
 
     // test for equality
     bool operator ==(const Vector2<T> &v) const;
@@ -89,21 +89,16 @@ struct Vector2
     // dot product
     T operator *(const Vector2<T> &v) const;
 
-    // dot product (same as above but a more easily understood name)
-    T dot(const Vector2<T> &v) const {
-        return *this * v;
-    }
-
     // cross product
     T operator %(const Vector2<T> &v) const;
 
     // computes the angle between this vector and another vector
     // returns 0 if the vectors are parallel, and M_PI if they are antiparallel
-    T angle(const Vector2<T> &v2) const;
+    float angle(const Vector2<T> &v2) const;
 
     // computes the angle of this vector in radians, from 0 to 2pi,
     // from a unit vector(1,0); a (1,1) vector's angle is +M_PI/4
-    T angle(void) const;
+    float angle(void) const;
 
     // check if any elements are NAN
     bool is_nan(void) const WARN_IF_UNUSED;
@@ -113,7 +108,7 @@ struct Vector2
 
     // check if all elements are zero
     bool is_zero(void) const WARN_IF_UNUSED {
-        return x == 0 && y == 0;
+        return (fabsf(x) < FLT_EPSILON) && (fabsf(y) < FLT_EPSILON);
     }
 
     // allow a vector2 to be used as an array, 0 indexed
@@ -140,13 +135,10 @@ struct Vector2
     }
 
     // gets the length of this vector squared
-    T length_squared() const;
+    float length_squared() const;
 
     // gets the length of this vector
-    T length(void) const;
-
-    // limit vector to a given length. returns true if vector was limited
-    bool limit_length(T max_length);
+    float length(void) const;
 
     // normalizes this vector
     void normalize();
@@ -161,24 +153,11 @@ struct Vector2
     void project(const Vector2<T> &v);
 
     // returns this vector projected onto v
-    Vector2<T> projected(const Vector2<T> &v) const;
+    Vector2<T> projected(const Vector2<T> &v);
 
     // adjust position by a given bearing (in degrees) and distance
-    void offset_bearing(T bearing, T distance);
+    void offset_bearing(float bearing, float distance);
 
-    // rotate vector by angle in radians
-    void rotate(T angle_rad);
-
-    /*
-      conversion to/from double
-     */
-    Vector2<float> tofloat() const {
-        return Vector2<float>{float(x),float(y)};
-    }
-    Vector2<double> todouble() const {
-        return Vector2<double>{x,y};
-    }
-    
     // given a position p1 and a velocity v1 produce a vector
     // perpendicular to v1 maximising distance from p1
     static Vector2<T> perpendicular(const Vector2<T> &pos_delta, const Vector2<T> &v1);
@@ -201,20 +180,20 @@ struct Vector2
     // w1 and w2 define a line segment
     // p is a point
     // returns the square of the closest distance between the line segment and the point
-    static T closest_distance_between_line_and_point_squared(const Vector2<T> &w1,
+    static float closest_distance_between_line_and_point_squared(const Vector2<T> &w1,
                                                                  const Vector2<T> &w2,
                                                                  const Vector2<T> &p);
 
     // w1 and w2 define a line segment
     // p is a point
     // returns the closest distance between the line segment and the point
-    static T closest_distance_between_line_and_point(const Vector2<T> &w1,
+    static float closest_distance_between_line_and_point(const Vector2<T> &w1,
                                                          const Vector2<T> &w2,
                                                          const Vector2<T> &p);
 
     // a1->a2 and b2->v2 define two line segments
     // returns the square of the closest distance between the two line segments
-    static T closest_distance_between_lines_squared(const Vector2<T> &a1,
+    static float closest_distance_between_lines_squared(const Vector2<T> &a1,
                                                         const Vector2<T> &a2,
                                                         const Vector2<T> &b1,
                                                         const Vector2<T> &b2);
@@ -222,13 +201,13 @@ struct Vector2
     // w defines a line segment from the origin
     // p is a point
     // returns the square of the closest distance between the radial and the point
-    static T closest_distance_between_radial_and_point_squared(const Vector2<T> &w,
+    static float closest_distance_between_radial_and_point_squared(const Vector2<T> &w,
                                                                    const Vector2<T> &p);
 
     // w defines a line segment from the origin
     // p is a point
     // returns the closest distance between the radial and the point
-    static T closest_distance_between_radial_and_point(const Vector2<T> &w,
+    static float closest_distance_between_radial_and_point(const Vector2<T> &w,
                                                            const Vector2<T> &p);
 
     // find the intersection between two line segments
@@ -238,23 +217,23 @@ struct Vector2
 
     // find the intersection between a line segment and a circle
     // returns true if they intersect and intersection argument is updated with intersection closest to seg_start
-    static bool circle_segment_intersection(const Vector2<T>& seg_start, const Vector2<T>& seg_end, const Vector2<T>& circle_center, T radius, Vector2<T>& intersection) WARN_IF_UNUSED;
+    static bool circle_segment_intersection(const Vector2<T>& seg_start, const Vector2<T>& seg_end, const Vector2<T>& circle_center, float radius, Vector2<T>& intersection) WARN_IF_UNUSED;
 
     // check if a point falls on the line segment from seg_start to seg_end
     static bool point_on_segment(const Vector2<T>& point,
                                  const Vector2<T>& seg_start,
                                  const Vector2<T>& seg_end) WARN_IF_UNUSED {
-        const T expected_run = seg_end.x-seg_start.x;
-        const T intersection_run = point.x-seg_start.x;
+        const float expected_run = seg_end.x-seg_start.x;
+        const float intersection_run = point.x-seg_start.x;
         // check slopes are identical:
-        if (::is_zero(expected_run)) {
-            if (fabsF(intersection_run) > FLT_EPSILON) {
+        if (fabsf(expected_run) < FLT_EPSILON) {
+            if (fabsf(intersection_run) > FLT_EPSILON) {
                 return false;
             }
         } else {
-            const T expected_slope = (seg_end.y-seg_start.y)/expected_run;
-            const T intersection_slope = (point.y-seg_start.y)/intersection_run;
-            if (fabsF(expected_slope - intersection_slope) > FLT_EPSILON) {
+            const float expected_slope = (seg_end.y-seg_start.y)/expected_run;
+            const float intersection_slope = (point.y-seg_start.y)/intersection_run;
+            if (fabsf(expected_slope - intersection_slope) > FLT_EPSILON) {
                 return false;
             }
         }
@@ -281,18 +260,8 @@ struct Vector2
     }
 };
 
-// check if all elements are zero
-template<> inline bool Vector2<float>::is_zero(void) const {
-    return ::is_zero(x) && ::is_zero(y);
-}
-
-template<> inline bool Vector2<double>::is_zero(void) const {
-    return ::is_zero(x) && ::is_zero(y);
-}
-
 typedef Vector2<int16_t>        Vector2i;
 typedef Vector2<uint16_t>       Vector2ui;
 typedef Vector2<int32_t>        Vector2l;
 typedef Vector2<uint32_t>       Vector2ul;
 typedef Vector2<float>          Vector2f;
-typedef Vector2<double>         Vector2d;

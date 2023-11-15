@@ -27,6 +27,8 @@
  */
 #pragma once
 
+#include <AP_HAL/AP_HAL.h>
+
 #if AP_MODULE_SUPPORTED
 
 #include <AP_AHRS/AP_AHRS.h>
@@ -48,7 +50,7 @@ public:
     static void call_hook_setup_complete(void);
     
     // call any AHRS_update hooks
-    static void call_hook_AHRS_update(const AP_AHRS &ahrs);
+    static void call_hook_AHRS_update(const AP_AHRS_NavEKF &ahrs);
 
     // call any gyro_sample hooks
     static void call_hook_gyro_sample(uint8_t instance, float dt, const Vector3f &gyro);

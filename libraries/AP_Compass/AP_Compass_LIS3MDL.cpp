@@ -19,8 +19,6 @@
  */
 #include "AP_Compass_LIS3MDL.h"
 
-#if AP_COMPASS_LIS3MDL_ENABLED
-
 #include <AP_HAL/AP_HAL.h>
 #include <utility>
 #include <AP_Math/AP_Math.h>
@@ -140,6 +138,7 @@ void AP_Compass_LIS3MDL::timer()
         int16_t magz;
     } data;
     const float range_scale = 1000.0f / 6842.0f;
+    Vector3f field;
 
     // check data ready
     uint8_t status;
@@ -155,15 +154,9 @@ void AP_Compass_LIS3MDL::timer()
         goto check_registers;
     }
 
-    {
-        Vector3f field{
-            data.magx * range_scale,
-            data.magy * range_scale,
-            data.magz * range_scale,
-        };
+    field(data.magx * range_scale, data.magy * range_scale, data.magz * range_scale);
 
-        accumulate_sample(field, compass_instance);
-    }
+    accumulate_sample(field, compass_instance);
 
 check_registers:
     dev->check_next_register();
@@ -173,5 +166,3 @@ void AP_Compass_LIS3MDL::read()
 {
     drain_accumulated_samples(compass_instance);
 }
-
-#endif  // AP_COMPASS_LIS3MDL_ENABLED

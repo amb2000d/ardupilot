@@ -17,15 +17,16 @@
  */
 
 #include "AP_SerialLED.h"
-
-#if AP_SERIALLED_ENABLED
-
 #include <AP_Math/AP_Math.h>
 #include "SRV_Channel/SRV_Channel.h"
 
 extern const AP_HAL::HAL& hal;
 
 AP_SerialLED AP_SerialLED::singleton;
+
+AP_SerialLED::AP_SerialLED()
+{
+}
 
 // set number of NeoPixels per pin
 bool AP_SerialLED::set_num_neopixel(uint8_t chan, uint8_t num_leds)
@@ -36,21 +37,12 @@ bool AP_SerialLED::set_num_neopixel(uint8_t chan, uint8_t num_leds)
     return false;
 }
 
-// set number of NeoPixels per pin in RGB mode
-bool AP_SerialLED::set_num_neopixel_rgb(uint8_t chan, uint8_t num_leds)
-{
-    if (chan >= 1 && chan <= 16 && num_leds <= AP_SERIALLED_MAX_LEDS) {
-        return hal.rcout->set_serial_led_num_LEDs(chan-1, num_leds, AP_HAL::RCOutput::MODE_NEOPIXELRGB);
-    }
-    return false;
-}
-
 // set number of ProfiLEDs per pin
 bool AP_SerialLED::set_num_profiled(uint8_t chan, uint8_t num_leds)
 {
     if (chan >= 1 && chan <= 16 && num_leds <= AP_SERIALLED_MAX_LEDS - 2) {
         // must have a clock
-        uint32_t Clock_mask = 0;
+        uint16_t Clock_mask = 0;
         if (!SRV_Channels::function_assigned((SRV_Channel::Aux_servo_function_t)((uint8_t)SRV_Channel::k_ProfiLED_Clock))) {
             return false;
         }
@@ -77,5 +69,3 @@ void AP_SerialLED::send(uint8_t chan)
     }
 
 }
-
-#endif  // AP_SERIALLED_ENABLED

@@ -5,11 +5,15 @@
  */
 #pragma once
 
+#define LOGGER_MAVLINK_SUPPORT 1
+
+#if LOGGER_MAVLINK_SUPPORT
+
+#include <AP_HAL/AP_HAL.h>
+
 #include "AP_Logger_Backend.h"
 
-#if HAL_LOGGING_MAVLINK_ENABLED
-
-#include <AP_HAL/Semaphores.h>
+extern const AP_HAL::HAL& hal;
 
 #define DF_MAVLINK_DISABLE_INTERRUPTS 0
 
@@ -17,12 +21,14 @@ class AP_Logger_MAVLink : public AP_Logger_Backend
 {
 public:
     // constructor
-    AP_Logger_MAVLink(class AP_Logger &front, LoggerMessageWriter_DFLogStart *writer);
-
-    static AP_Logger_Backend  *probe(AP_Logger &front,
-                                     LoggerMessageWriter_DFLogStart *ls) {
-        return new AP_Logger_MAVLink(front, ls);
-    }
+    AP_Logger_MAVLink(AP_Logger &front, LoggerMessageWriter_DFLogStart *writer) :
+        AP_Logger_Backend(front, writer),
+        _max_blocks_per_send_blocks(8)
+        ,_perf_packing(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "DM_packing"))
+        {
+            _blockcount = 1024*((uint8_t)_front._params.mav_bufsize) / sizeof(struct dm_block);
+            // ::fprintf(stderr, "DM: Using %u blocks\n", _blockcount);
+        }
 
     // initialisation
     void Init() override;
@@ -43,7 +49,8 @@ public:
     // erase handling
     void EraseAll() override {}
 
-    void PrepForArming() override {}
+    bool NeedPrep() override { return false; }
+    void Prep() override { }
 
     // high level interface
     uint16_t find_last_log(void) override { return 0; }
@@ -52,12 +59,12 @@ public:
     int16_t get_log_data(uint16_t log_num, uint16_t page, uint32_t offset, uint16_t len, uint8_t *data) override { return 0; }
     uint16_t get_num_logs(void) override { return 0; }
 
-    void remote_log_block_status_msg(const GCS_MAVLINK &link, const mavlink_message_t& msg) override;
-    void vehicle_was_disarmed() override {}
+    void push_log_blocks() override;
+
+    void remote_log_block_status_msg(const mavlink_channel_t chan, const mavlink_message_t& msg) override;
 
 protected:
 
-    void push_log_blocks() override;
     bool WritesOK() const override;
 
 private:
@@ -69,7 +76,7 @@ private:
         struct dm_block *next;
     };
     bool send_log_block(struct dm_block &block);
-    void handle_ack(const GCS_MAVLINK &link, const mavlink_message_t &msg, uint32_t seqno);
+    void handle_ack(const mavlink_channel_t chan, const mavlink_message_t &msg, uint32_t seqno);
     void handle_retry(uint32_t block_num);
     void do_resends(uint32_t now);
     void free_all_blocks();
@@ -116,8 +123,7 @@ private:
     bool logging_enabled() const override { return true; }
     bool logging_failed() const override;
 
-    const GCS_MAVLINK *_link;
-
+    mavlink_channel_t _chan;
     uint8_t _target_system_id;
     uint8_t _target_component_id;
 
@@ -141,7 +147,7 @@ private:
     void Write_logger_MAV(AP_Logger_MAVLink &logger);
 
     uint32_t bufferspace_available() override; // in bytes
-    uint8_t remaining_space_in_current_block() const;
+    uint8_t remaining_space_in_current_block();
     // write buffer
     uint8_t _blockcount_free;
     uint8_t _blockcount;
@@ -151,6 +157,7 @@ private:
 
     void periodic_10Hz(uint32_t now) override;
     void periodic_1Hz() override;
+    void periodic_fullrate() override;
     
     void stats_init();
     void stats_reset();
@@ -163,11 +170,15 @@ private:
     /* we currently ignore requests to start a new log.  Notionally we
      * could close the currently logging session and hope the client
      * re-opens one */
-    void start_new_log(void) override {
-        return;
+    uint16_t start_new_log(void) override {
+        return 0;
     }
+    // performance counters
+    AP_HAL::Util::perf_counter_t  _perf_errors;
+    AP_HAL::Util::perf_counter_t  _perf_packing;
+    AP_HAL::Util::perf_counter_t  _perf_overruns;
 
     HAL_Semaphore semaphore;
 };
 
-#endif // HAL_LOGGING_MAVLINK_ENABLED
+#endif // LOGGER_MAVLINK_SUPPORT

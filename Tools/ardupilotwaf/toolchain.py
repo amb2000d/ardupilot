@@ -21,7 +21,6 @@ from waflib import Logs
 
 import os
 import re
-import sys
 
 @conf
 def find_gxx(conf):
@@ -119,7 +118,7 @@ def _set_pkgconfig_crosscompilation_wrapper(cfg):
 
     @conf
     def new_validate_cfg(kw):
-        if 'path' not in kw:
+        if not 'path' in kw:
             if not cfg.env.PKGCONFIG:
                 cfg.find_program('%s-pkg-config' % cfg.env.TOOLCHAIN, var='PKGCONFIG')
             kw['path'] = cfg.env.PKGCONFIG
@@ -143,11 +142,7 @@ def configure(cfg):
         return
 
     _set_pkgconfig_crosscompilation_wrapper(cfg)
-    if sys.platform.startswith("cygwin"):
-        # on cygwin arm-none-eabi-ar doesn't support the @FILE syntax for splitting long lines
-        cfg.find_program('ar', var='AR', quiet=True)
-    else:
-        cfg.find_program('%s-ar' % cfg.env.TOOLCHAIN, var='AR', quiet=True)
+    cfg.find_program('%s-ar' % cfg.env.TOOLCHAIN, var='AR', quiet=True)
     cfg.load('compiler_cxx compiler_c')
 
     if not cfg.options.disable_gccdeps:

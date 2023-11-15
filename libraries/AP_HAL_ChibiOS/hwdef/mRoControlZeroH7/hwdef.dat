@@ -37,7 +37,7 @@ define HAL_STORAGE_SIZE 32768
 USB_STRING_MANUFACTURER "mRo"
 
 # RC Input set for Interrupt not DMA
-PC7 TIM3_CH2 TIM3 RCININT PULLDOWN LOW
+PC7 TIM3_CH2 TIM3 RCININT FLOAT LOW
 
 # GPIO(70) # also USART6_RX for serial RC
 
@@ -70,6 +70,9 @@ define HAL_I2C_INTERNAL_MASK 0
 # OTG1 and OTG2 are USB devices (1x physical USB connection enumerated as 2x logical ports)
 
 SERIAL_ORDER OTG1 USART2 USART3 UART4 UART8 UART7 OTG2
+
+# default the 2nd interface to MAVLink2 until MissionPlanner updates drivers
+define HAL_OTG2_PROTOCOL SerialProtocol_MAVLink2
 
 # Another USART, this one for telem1. This one has RTS and CTS lines.
 # USART2 telem1
@@ -199,6 +202,8 @@ PD14 TIM4_CH3 TIM4 PWM(6) GPIO(55)
 PI5  TIM8_CH1 TIM8 PWM(7) GPIO(56)
 PI6  TIM8_CH2 TIM8 PWM(8) GPIO(57)
 
+define BOARD_PWM_COUNT_DEFAULT 8
+
 # This is the invensense 20602 data-ready pin.
 PD15 MPU_DRDY INPUT
 
@@ -213,12 +218,16 @@ PC5 VDD_3V3_PERIPH_EN OUTPUT HIGH
 # names used in AnalogIn.cpp. 
 PB5 VDD_BRICK_VALID INPUT PULLDOWN
 
-SPIDEV dps310      SPI2 DEVID3  BARO_CS           MODE3  5*MHZ  5*MHZ
+SPIDEV dps280      SPI2 DEVID3  BARO_CS           MODE3  5*MHZ  5*MHZ
 SPIDEV ramtron     SPI2 DEVID10 FRAM_CS           MODE3  8*MHZ  8*MHZ
 SPIDEV bmi088_g    SPI5 DEVID1  BMI088_GYRO_CS    MODE3  5*MHZ  5*MHZ
 SPIDEV bmi088_a    SPI5 DEVID2  BMI088_ACCEL_CS   MODE3  5*MHZ  5*MHZ
 SPIDEV icm20608    SPI1 DEVID2  ICM_20602_CS      MODE3  2*MHZ  4*MHZ
 SPIDEV icm20948    SPI1 DEVID1  ICM_20948_CS      MODE3  2*MHZ  4*MHZ
+
+# Now some defines for logging and terrain data files.
+define HAL_BOARD_LOG_DIRECTORY "/APM/LOGS"
+define HAL_BOARD_TERRAIN_DIRECTORY "/APM/TERRAIN"
 
 # Enable RAMTROM parameter storage.
 define HAL_WITH_RAMTRON 1
@@ -249,7 +258,7 @@ IMU Invensensev2 SPI:icm20948 ROTATION_ROLL_180_YAW_90
 define HAL_DEFAULT_INS_FAST_SAMPLE 7
 
 # 1 baro
-BARO DPS280      SPI:dps310
+BARO DPS280      SPI:dps280
 
 # 1 compass
 COMPASS AK09916:probe_ICM20948 0 ROTATION_ROLL_180

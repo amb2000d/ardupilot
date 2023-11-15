@@ -1,9 +1,5 @@
 #include <AP_HAL/AP_HAL.h>
-
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-
-#include <AP_BoardConfig/AP_BoardConfig.h>
-#include <SITL/SITL.h>
 
 #include "RCOutput.h"
 
@@ -36,7 +32,7 @@ void RCOutput::enable_ch(uint8_t ch)
     if (!(_enable_mask & (1U << ch))) {
         Debug("enable_ch(%u)\n", ch);
     }
-    _enable_mask |= (1U << ch);
+    _enable_mask |= 1U << ch;
 }
 
 void RCOutput::disable_ch(uint8_t ch)
@@ -44,23 +40,13 @@ void RCOutput::disable_ch(uint8_t ch)
     if (_enable_mask & (1U << ch)) {
         Debug("disable_ch(%u)\n", ch);
     }
-    _enable_mask &= ~(1U << ch);
+    _enable_mask &= ~1U << ch;
 }
 
 void RCOutput::write(uint8_t ch, uint16_t period_us)
 {
-    if (safety_state == AP_HAL::Util::SAFETY_DISARMED) {
-        const auto *board_config = AP_BoardConfig::get_singleton();
-        const uint32_t safety_mask = board_config != nullptr? board_config->get_safety_mask() : 0;
-        if (!(safety_mask & (1U<<ch))) {
-            // implement safety pwm value
-            period_us = 0;
-        }
-    }
-
     _sitlState->output_ready = true;
-    // FIXME: something in sitl is expecting to be able to read and write disabled channels
-    if (ch < SITL_NUM_CHANNELS /*&& (_enable_mask & (1U<<ch))*/) {
+    if (ch < SITL_NUM_CHANNELS && (_enable_mask & (1U<<ch))) {
         if (_corked) {
             _pending[ch] = period_us;
         } else {
@@ -71,8 +57,7 @@ void RCOutput::write(uint8_t ch, uint16_t period_us)
 
 uint16_t RCOutput::read(uint8_t ch)
 {
-    // FIXME: something in sitl is expecting to be able to read and write disabled channels
-    if (ch < SITL_NUM_CHANNELS /*&& (_enable_mask & (1U<<ch))*/) {
+    if (ch < SITL_NUM_CHANNELS) {
         return _sitlState->pwm_output[ch];
     }
     return 0;
@@ -97,27 +82,17 @@ void RCOutput::push(void)
         memcpy(_sitlState->pwm_output, _pending, SITL_NUM_CHANNELS * sizeof(uint16_t));
         _corked = false;
     }
-
-    SITL::SIM *sitl = AP::sitl();
-    if (sitl && sitl->esc_telem) {
-        if (esc_telem == nullptr) {
-            esc_telem = new AP_ESC_Telem_SITL;
-        }
-        if (esc_telem != nullptr) {
-            esc_telem->update();
-        }
-    }
 }
 
 /*
   Serial LED emulation
 */
-bool RCOutput::set_serial_led_num_LEDs(const uint16_t chan, uint8_t num_leds, output_mode mode, uint32_t clock_mask)
+bool RCOutput::set_serial_led_num_LEDs(const uint16_t chan, uint8_t num_leds, output_mode mode, uint16_t clock_mask)
 {
     if (chan > 15 || num_leds > 64) {
         return false;
     }
-    SITL::SIM *sitl = AP::sitl();
+    SITL::SITL *sitl = AP::sitl();
     if (sitl) {
         sitl->led.num_leds[chan] = num_leds;
         return true;
@@ -130,7 +105,7 @@ void RCOutput::set_serial_led_rgb_data(const uint16_t chan, int8_t led, uint8_t 
     if (chan > 15) {
         return;
     }
-    SITL::SIM *sitl = AP::sitl();
+    SITL::SITL *sitl = AP::sitl();
     if (led == -1) {
         for (uint8_t i=0; i < sitl->led.num_leds[chan]; i++) {
             set_serial_led_rgb_data(chan, i, red, green, blue);
@@ -149,10 +124,10 @@ void RCOutput::set_serial_led_rgb_data(const uint16_t chan, int8_t led, uint8_t 
 
 void RCOutput::serial_led_send(const uint16_t chan)
 {
-    SITL::SIM *sitl = AP::sitl();
+    SITL::SITL *sitl = AP::sitl();
     if (sitl) {
         sitl->led.send_counter++;
     }
 }
 
-#endif //CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#endif

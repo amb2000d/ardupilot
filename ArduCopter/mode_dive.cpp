@@ -1,24 +1,71 @@
+/*
+** Texas A&M University
+** Team: Crane Tech
+** Author: Luis Orozco
+** File: overlay.py
+** Description: 
+   File responsible for holding functions necessary for overlaying textual information
+   on video frames taken by the camera and saving videos onboard the raspberry pi
+ */
+
+
 #include "Copter.h"
 
 
+/* 
+** Name: init
+
+** Description: when called will check to see if it is okay for vehicle to enter new mode.
+    If it is okay to enter mode, the init function will return true
+
+** Parameters:
+    - ignore_checks: boolean values to determine whether or not to ignore checks
+
+** Return:
+    - value signifying whether or not it is okay to enter mode
+
+** Notes:
+ */
 bool ModeDive::init(bool ignore_checks)
 {
-    // reset flag indicating if pilot has applied roll or pitch inputs during landing
-    copter.ap.land_repo_active = false;
+    // if (!ignore_checks) {
+        // if (!AP::ahrs().home_is_set()) {
+        //     return false;
+        // }
+    // }
 
-    // this will be set true if prec land is later active
-    copter.ap.prec_land_active = false;
-    
-    
-    
+    // initialise waypoint and spline controller
+    // wp_nav->wp_and_spline_init();
+    // _state = RTL_Starting;
+    // _state_complete = true; // see run() method below
+    // terrain_following_allowed = !copter.failsafe.terrain;
+
     return true;
 }
 
+
+/*
+** Name: run
+
+** Description: recevies commands from transmitter, pilot's inputs, and converts
+    them to motor values
+
+** Parameters: none
+
+** Return: none
+
+** Notes:
+    stabilize_run - runs the main stabilize controller
+    should be called at 100hz or more
+ */
 void ModeDive::run()
 {
-    if (!motors->armed()) {
-        // Motors should be Stopped
-        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
-    }
-    
+
+    // call attitude controller
+    attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(0, 0, 0);
+
+    // output pilot's throttle
+    attitude_control->set_throttle_out(0,
+                                       true,
+                                       g.throttle_filt);
 }

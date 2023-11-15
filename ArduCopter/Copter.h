@@ -1000,7 +1000,7 @@ private:
 
 public:
     void mavlink_delay_cb();    // GCS_Mavlink.cpp
-    void failsafe_check();      // failsafe.cpp
+    void failsafe_check();      // failsafe.cppnn
 };
 
 extern Copter copter;

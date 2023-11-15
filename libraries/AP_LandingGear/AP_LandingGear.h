@@ -1,16 +1,20 @@
-/// @file   AP_LandingGear.h
-/// @brief  Landing gear control library
+/// @file	AP_LandingGear.h
+/// @brief	Landing gear control library
 #pragma once
-
-#include "AP_LandingGear_config.h"
-
-#if AP_LANDINGGEAR_ENABLED
 
 #include <AP_Param/AP_Param.h>
 #include <AP_Common/AP_Common.h>
 
-/// @class  AP_LandingGear
-/// @brief  Class managing the control of landing gear
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#define DEFAULT_PIN_WOW 8
+#define DEFAULT_PIN_WOW_POL 1
+#else
+#define DEFAULT_PIN_WOW -1
+#define DEFAULT_PIN_WOW_POL 0
+#endif
+
+/// @class	AP_LandingGear
+/// @brief	Class managing the control of landing gear
 class AP_LandingGear {
 public:
     AP_LandingGear() {
@@ -24,7 +28,8 @@ public:
     }
 
     /* Do not allow copies */
-    CLASS_NO_COPY(AP_LandingGear);
+    AP_LandingGear(const AP_LandingGear &other) = delete;
+    AP_LandingGear &operator=(const AP_LandingGear&) = delete;
     
     // get singleton instance
     static AP_LandingGear *get_singleton(void) {
@@ -71,8 +76,8 @@ public:
     /// set landing gear position to retract, deploy or deploy-and-keep-deployed
     void set_position(LandingGearCommand cmd);
     
-    uint32_t get_gear_state_duration_ms() const;
-    uint32_t get_wow_state_duration_ms() const;
+    uint32_t get_gear_state_duration_ms();
+    uint32_t get_wow_state_duration_ms();
 
     static const struct AP_Param::GroupInfo        var_info[];
     
@@ -86,7 +91,6 @@ public:
 
 private:
     // Parameters
-    AP_Int8     _enable;
     AP_Int8     _startup_behaviour;     // start-up behaviour (see LandingGearStartupBehaviour)
     
     AP_Int8     _pin_deployed;
@@ -127,5 +131,3 @@ private:
 
     static AP_LandingGear *_singleton;
 };
-
-#endif  // AP_LANDINGGEAR_ENABLED

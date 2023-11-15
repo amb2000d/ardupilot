@@ -14,10 +14,8 @@
  *
  * Code by Andrew Tridgell and Siddharth Bharat Purohit
  */
-
 #include <AP_HAL/AP_HAL.h>
 #include "Semaphores.h"
-#include <hal.h>
 #include "AP_HAL_ChibiOS.h"
 
 #if CH_CFG_USE_MUTEXES == TRUE

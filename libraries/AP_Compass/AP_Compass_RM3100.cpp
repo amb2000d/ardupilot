@@ -19,8 +19,6 @@
  */
 #include "AP_Compass_RM3100.h"
 
-#if AP_COMPASS_RM3100_ENABLED
-
 #include <AP_HAL/AP_HAL.h>
 #include <utility>
 #include <AP_Math/AP_Math.h>
@@ -151,7 +149,7 @@ bool AP_Compass_RM3100::init()
     }
     set_dev_id(compass_instance, dev->get_bus_id());
 
-    DEV_PRINTF("RM3100: Found at address 0x%x as compass %u\n", dev->get_bus_address(), compass_instance);
+    hal.console->printf("RM3100: Found at address 0x%x as compass %u\n", dev->get_bus_address(), compass_instance);
     
     set_rotation(compass_instance, rotation);
 
@@ -179,6 +177,7 @@ void AP_Compass_RM3100::timer()
         uint8_t magz_1;
         uint8_t magz_0;
     } data;
+    Vector3f field;
 
     int32_t magx = 0;
     int32_t magy = 0;
@@ -210,31 +209,10 @@ void AP_Compass_RM3100::timer()
     magy >>= 8;
     magz >>= 8;
 
-#ifdef AP_RM3100_REVERSAL_MASK
-    // some RM3100 builds get the polarity wrong on one or more of the
-    // elements. By setting AP_RM3100_REVERSAL_MASK in hwdef.dat you
-    // can fix it without modifying the hardware
-    if (AP_RM3100_REVERSAL_MASK & 1U) {
-        magx = -magx;
-    }
-    if (AP_RM3100_REVERSAL_MASK & 2U) {
-        magy = -magy;
-    }
-    if (AP_RM3100_REVERSAL_MASK & 4U) {
-        magz = -magz;
-    }
-#endif
+    // apply scaler and store in field vector
+    field(magx * _scaler, magy * _scaler, magz * _scaler);
 
-    {
-        // apply scaler and store in field vector
-         Vector3f field{
-             magx * _scaler,
-             magy * _scaler,
-             magz * _scaler
-         };
-
-        accumulate_sample(field, compass_instance);
-    }
+    accumulate_sample(field, compass_instance);
 
 check_registers:
     dev->check_next_register();
@@ -244,5 +222,3 @@ void AP_Compass_RM3100::read()
 {
 	drain_accumulated_samples(compass_instance);
 }
-
-#endif  // AP_COMPASS_RM3100_ENABLED

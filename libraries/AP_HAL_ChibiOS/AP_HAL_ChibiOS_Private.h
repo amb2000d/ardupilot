@@ -15,5 +15,3 @@
 #include "RCOutput.h"
 #include "I2CDevice.h"
 #include "Flash.h"
-#include "DSP.h"
-#include "WSPIDevice.h"

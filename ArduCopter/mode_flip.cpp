@@ -35,13 +35,16 @@
 // flip_init - initialise flip controller
 bool ModeFlip::init(bool ignore_checks)
 {
-    // only allow flip from some flight modes, for example ACRO, Stabilize, AltHold or FlowHold flight modes
-    if (!copter.flightmode->allows_flip()) {
+    // only allow flip from ACRO, Stabilize, AltHold or Drift flight modes
+    if (copter.control_mode != Mode::Number::ACRO &&
+        copter.control_mode != Mode::Number::STABILIZE &&
+        copter.control_mode != Mode::Number::ALT_HOLD &&
+        copter.control_mode != Mode::Number::FLOWHOLD) {
         return false;
     }
 
     // if in acro or stabilize ensure throttle is above zero
-    if (copter.ap.throttle_zero && (copter.flightmode->mode_number() == Mode::Number::ACRO || copter.flightmode->mode_number() == Mode::Number::STABILIZE)) {
+    if (copter.ap.throttle_zero && (copter.control_mode == Mode::Number::ACRO || copter.control_mode == Mode::Number::STABILIZE)) {
         return false;
     }
 
@@ -56,7 +59,7 @@ bool ModeFlip::init(bool ignore_checks)
     }
 
     // capture original flight mode so that we can return to it after completion
-    orig_control_mode = copter.flightmode->mode_number();
+    orig_control_mode = copter.control_mode;
 
     // initialise state
     _state = FlipState::Start;
@@ -76,7 +79,7 @@ bool ModeFlip::init(bool ignore_checks)
     }
 
     // log start of flip
-    AP::logger().Write_Event(LogEvent::FLIP_START);
+    Log_Write_Event(DATA_FLIP_START);
 
     // capture current attitude which will be used during the FlipState::Recovery stage
     const float angle_max = copter.aparm.angle_max;
@@ -194,7 +197,7 @@ void ModeFlip::run()
                 copter.set_mode(Mode::Number::STABILIZE, ModeReason::UNKNOWN);
             }
             // log successful completion
-            AP::logger().Write_Event(LogEvent::FLIP_END);
+            Log_Write_Event(DATA_FLIP_END);
         }
         break;
 

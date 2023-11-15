@@ -25,6 +25,28 @@
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
+// Advanced Failsafe support
+//
+
+#ifndef ADVANCED_FAILSAFE
+ # define ADVANCED_FAILSAFE ENABLED
+#endif
+
+
+//////////////////////////////////////////////////////////////////////////////
+// Optical flow sensor support
+//
+
+#ifndef OPTFLOW
+#if AP_AHRS_NAVEKF_AVAILABLE
+ # define OPTFLOW ENABLED
+#else
+ # define OPTFLOW DISABLED
+#endif
+#endif
+
+
+//////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 // RADIO CONFIGURATION
 //////////////////////////////////////////////////////////////////////////////
@@ -100,6 +122,20 @@
 
 #ifndef DSPOILR_RUD_RATE_DEFAULT
  #define DSPOILR_RUD_RATE_DEFAULT 100
+#endif
+
+//////////////////////////////////////////////////////////////////////////////
+// CAMERA TRIGGER AND CONTROL
+//
+#ifndef CAMERA
+ # define CAMERA         ENABLED
+#endif
+
+//////////////////////////////////////////////////////////////////////////////
+// MOUNT (ANTENNA OR CAMERA)
+//
+#ifndef MOUNT
+#define MOUNT          ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -217,16 +253,44 @@
  # define SCALING_SPEED          15.0
 #endif
 
+// use this to disable geo-fencing
+#ifndef GEOFENCE_ENABLED
+ # define GEOFENCE_ENABLED ENABLED
+#endif
+
+// pwm value on FENCE_CHANNEL to use to enable fenced mode
+#ifndef FENCE_ENABLE_PWM
+ # define FENCE_ENABLE_PWM 1750
+#endif
+
 // a digital pin to set high when the geo-fence triggers. Defaults
 // to -1, which means don't activate a pin
 #ifndef FENCE_TRIGGERED_PIN
  # define FENCE_TRIGGERED_PIN -1
 #endif
 
+// if RESET_SWITCH_CH is not zero, then this is the PWM value on
+// that channel where we reset the control mode to the current switch
+// position (to for example return to switched mode after failsafe or
+// fence breach)
+#ifndef RESET_SWITCH_CHAN_PWM
+ # define RESET_SWITCH_CHAN_PWM 1750
+#endif
+
+#ifndef HIL_SUPPORT
+# define HIL_SUPPORT !HAL_MINIMIZE_FEATURES
+#endif
+
 //////////////////////////////////////////////////////////////////////////////
 // Parachute release
 #ifndef PARACHUTE
-#define PARACHUTE HAL_PARACHUTE_ENABLED
+#define PARACHUTE ENABLED
+#endif
+
+//////////////////////////////////////////////////////////////////////////////
+// Payload Gripper
+#ifndef GRIPPER_ENABLED
+  #define GRIPPER_ENABLED !HAL_MINIMIZE_FEATURES
 #endif
 
 #ifndef STATS_ENABLED
@@ -237,18 +301,10 @@
  #define OSD_ENABLED DISABLED
 #endif
 
-#ifndef OFFBOARD_GUIDED
- #define OFFBOARD_GUIDED 1
+#ifndef SOARING_ENABLED
+ #define SOARING_ENABLED !HAL_MINIMIZE_FEATURES
 #endif
 
-//////////////////////////////////////////////////////////////////////////////
-//  EKF Failsafe
-#ifndef FS_EKF_THRESHOLD_DEFAULT
- # define FS_EKF_THRESHOLD_DEFAULT      0.8f    // EKF failsafe's default compass and velocity variance threshold above which the EKF failsafe will be triggered
-#endif
-
-/////////////////////////////////////////////////////////////////////////////
-//  Landing Throttle Control Trigger Threshold
-#ifndef THR_CTRL_LAND_THRESH
- #define THR_CTRL_LAND_THRESH 0.7
+#ifndef LANDING_GEAR_ENABLED
+ #define LANDING_GEAR_ENABLED !HAL_MINIMIZE_FEATURES
 #endif

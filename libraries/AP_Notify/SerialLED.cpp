@@ -13,9 +13,8 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "AP_Notify/AP_Notify.h"
 #include "SerialLED.h"
-
-#if AP_NOTIFY_SERIALLED_ENABLED
 
 extern const AP_HAL::HAL& hal;
 
@@ -24,10 +23,22 @@ SerialLED::SerialLED(uint8_t led_off, uint8_t led_bright, uint8_t led_medium, ui
 {
 }
 
-bool SerialLED::init()
+bool SerialLED::hw_init()
 {
-    enable_mask = init_ports();
+    init_ports();
+    hal.scheduler->register_io_process(FUNCTOR_BIND_MEMBER(&SerialLED::timer, void));
     return true;
+}
+
+void SerialLED::timer()
+{
+    WITH_SEMAPHORE(_sem);
+
+    const uint32_t now_ms = AP_HAL::millis();
+    if (now_ms - _last_init_ms >= 1000) {
+        _last_init_ms = now_ms;
+        enable_mask = init_ports();
+    }
 }
 
 bool SerialLED::hw_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
@@ -56,5 +67,3 @@ bool SerialLED::hw_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 
     return true;
 }
-
-#endif  // AP_NOTIFY_SERIALLED_ENABLED

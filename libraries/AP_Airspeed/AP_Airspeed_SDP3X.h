@@ -14,15 +14,12 @@
  */
 #pragma once
 
-#include "AP_Airspeed_config.h"
-
-#if AP_AIRSPEED_SDP3X_ENABLED
-
 /*
   backend driver for airspeed from I2C
  */
 
 #include <AP_HAL/AP_HAL.h>
+#include <AP_Param/AP_Param.h>
 #include <AP_HAL/utility/OwnPtr.h>
 #include <AP_HAL/I2CDevice.h>
 #include <utility>
@@ -37,8 +34,8 @@
 class AP_Airspeed_SDP3X : public AP_Airspeed_Backend
 {
 public:
-
-    using AP_Airspeed_Backend::AP_Airspeed_Backend;
+    AP_Airspeed_SDP3X(AP_Airspeed &frontend, uint8_t _instance);
+    ~AP_Airspeed_SDP3X(void) {}
 
     // probe and initialise the sensor
     bool init() override;
@@ -52,7 +49,7 @@ public:
 private:
     void _timer();
     bool _send_command(uint16_t cmd);
-    bool _crc(const uint8_t data[], uint8_t size, uint8_t checksum);
+    bool _crc(const uint8_t data[], unsigned size, uint8_t checksum);
     float _correct_pressure(float press);
 
     float _temp;
@@ -66,6 +63,3 @@ private:
 
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
 };
-
-
-#endif  // AP_AIRSPEED_SDP3X_ENABLED

@@ -16,7 +16,7 @@
 #include <stdio.h>
 #include <StorageManager/StorageManager.h>
 #include <AP_Notify/AP_Notify.h>
-#include <GCS_MAVLink/GCS.h>
+#include <GCS_MAVLink/GCS_MAVLink.h>
 #include <AP_Math/crc.h>
 #include <AP_Param/AP_Param.h>
 
@@ -320,7 +320,9 @@ const uint16_t CRCTable[] = {
 bool AP_Radio_cc2500::probe(void)
 {
     auto dev = hal.spi->get_device("cc2500");
-    dev->get_semaphore()->take_blocking();
+    if (!dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
+        return false;
+    }
     uint8_t r1=0, r2=0;
     if (!dev->read_registers(CC2500_30_PARTNUM | CC2500_READ_BURST | CC2500_READ_SINGLE, &r1, 1) || r1 != 0x80 ||
         !dev->read_registers(CC2500_31_VERSION | CC2500_READ_BURST | CC2500_READ_SINGLE, &r2, 1) || r2 != 0x03) {
@@ -365,7 +367,7 @@ void AP_Radio_cc2500::radio_init(void)
     hal.gpio->attach_interrupt(HAL_GPIO_RADIO_IRQ, trigger_irq_radio_event, AP_HAL::GPIO::INTERRUPT_RISING);
 
     // fill in rxid for use in double bind prevention
-    char sysid[50] {};
+    char sysid[40] {};
     hal.util->get_system_id(sysid);
     uint16_t sysid_crc = calc_crc((const uint8_t *)sysid, strnlen(sysid, sizeof(sysid)));
     if (sysid_crc == 0) {
@@ -414,7 +416,7 @@ void AP_Radio_cc2500::trigger_irq_radio_event()
     chSysUnlockFromISR();
 }
 
-void AP_Radio_cc2500::trigger_timeout_event(virtual_timer_t* vt, void *arg)
+void AP_Radio_cc2500::trigger_timeout_event(void *arg)
 {
     (void)arg;
     //we are called from ISR context
@@ -1113,7 +1115,7 @@ void AP_Radio_cc2500::irq_handler_thd(void *arg)
         switch (evt) {
         case EVT_IRQ:
             if (radio_singleton->protocolState == STATE_FCCTEST) {
-                DEV_PRINTF("IRQ FCC\n");
+                hal.console->printf("IRQ FCC\n");
             }
             radio_singleton->irq_handler();
             break;

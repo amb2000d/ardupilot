@@ -22,10 +22,6 @@
 
 #pragma once
 
-#include "AP_InternalError_config.h"
-
-#if AP_INTERNALERROR_ENABLED
-
 #include <stdint.h>
 
 class AP_InternalError {
@@ -40,13 +36,13 @@ public:
     // note that this map is an internal ArduPilot fixture and is
     // prone to change at regular intervals.  The meanings of these
     // bits can change day-to-day.
-    enum class error_t : uint32_t {                           // Hex      Decimal
+    enum class error_t {                           // Hex      Decimal
         logger_mapfailure           = (1U <<  0),  // 0x00001  1
         logger_missing_logstructure = (1U <<  1),  // 0x00002  2
         logger_logwrite_missingfmt  = (1U <<  2),  // 0x00004  4
         logger_too_many_deletions   = (1U <<  3),  // 0x00008  8
         logger_bad_getfilename      = (1U <<  4),  // 0x00010  16
-        panic                       = (1U <<  5),  // 0x00020  32
+        unused1                     = (1U <<  5),  // 0x00020  32
         logger_flushing_without_sem = (1U <<  6),  // 0x00040  64
         logger_bad_current_block    = (1U <<  7),  // 0x00080  128
         logger_blockcount_mismatch  = (1U <<  8),  // 0x00100  256
@@ -70,8 +66,7 @@ public:
         mem_guard                   = (1U << 26),  //0x4000000 67108864
         dma_fail                    = (1U << 27),  //0x8000000 134217728
         params_restored             = (1U << 28),  //0x10000000 268435456
-        invalid_arg_or_result       = (1U << 29),  //0x20000000 536870912
-        __LAST__                    = (1U << 30),  // used only for sanity check
+        __LAST__                    = (1U << 29),  // used only for sanity check
     };
 
     // if you've changed __LAST__ to be 32, then you will want to
@@ -81,14 +76,11 @@ public:
 
     uint16_t last_error_line() const { return last_line; }
 
-    void error(const AP_InternalError::error_t error, uint16_t line);
+    void error(const AP_InternalError::error_t error, uint16_t line=0);
 
     // fill buffer with a description of the exceptions present in
     // internal errors.  buffer will always be null-terminated.
     void errors_as_string(uint8_t *buffer, uint16_t len) const;
-
-    // convert an error code to a string
-    void error_to_string(char *buffer, uint16_t len, error_t error_code) const;
 
     uint32_t count() const { return total_error_count; }
 
@@ -112,12 +104,7 @@ namespace AP {
 
 extern "C" {
     void AP_stack_overflow(const char *thread_name);
-    void AP_memory_guard_error(uint32_t size);
 }
 
 #define INTERNAL_ERROR(error_number) \
-    AP::internalerror().error(error_number, __AP_LINE__);
-
-#else  // AP_INTERNALERROR_ENABLED is false
-#define INTERNAL_ERROR(error_number)
-#endif // AP_INTERNALERROR_ENABLED
+    AP::internalerror().error(error_number, __LINE__);

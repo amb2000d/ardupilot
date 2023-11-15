@@ -4,8 +4,9 @@
   data structure for measuring speed of EKF mag fusion code
  */
 #include <AP_Math/AP_Math.h>
-#include <AP_Math/ftype.h>
 #include <stdint.h>
+
+typedef float ftype;
 
 class EKF_Maths {
 public:

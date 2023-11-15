@@ -16,10 +16,6 @@
  */
 #pragma once
 
-#include "AP_Notify_config.h"
-
-#if AP_NOTIFY_TOSHIBALED_ENABLED
-
 #include <AP_HAL/I2CDevice.h>
 #include "RGBLed.h"
 
@@ -27,8 +23,8 @@ class ToshibaLED_I2C : public RGBLed
 {
 public:
     ToshibaLED_I2C(uint8_t bus);
-    bool init(void) override;
 protected:
+    bool hw_init(void) override;
     bool hw_set_rgb(uint8_t r, uint8_t g, uint8_t b) override;
 
 private:
@@ -40,5 +36,3 @@ private:
     } rgb;
     uint8_t _bus;
 };
-
-#endif  // AP_NOTIFY_TOSHIBALED_ENABLED

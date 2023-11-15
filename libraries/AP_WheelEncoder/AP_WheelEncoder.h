@@ -15,6 +15,7 @@
 #pragma once
 
 #include <AP_Common/AP_Common.h>
+#include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
 
@@ -35,12 +36,8 @@ public:
     AP_WheelEncoder(void);
 
     /* Do not allow copies */
-    CLASS_NO_COPY(AP_WheelEncoder);
-
-    // get singleton instance
-    static AP_WheelEncoder *get_singleton() {
-        return _singleton;
-    }
+    AP_WheelEncoder(const AP_WheelEncoder &other) = delete;
+    AP_WheelEncoder &operator=(const AP_WheelEncoder&) = delete;
 
     // WheelEncoder driver types
     enum WheelEncoder_Type : uint8_t {
@@ -68,7 +65,7 @@ public:
     void update(void);
 
     // log data to logger
-    void Log_Write() const;
+    void Log_Write();
 
     // return the number of wheel encoder sensor instances
     uint8_t num_sensors(void) const { return num_instances; }
@@ -124,12 +121,4 @@ protected:
     AP_WheelEncoder_Backend *drivers[WHEELENCODER_MAX_INSTANCES];
     uint8_t num_instances;
     Vector3f pos_offset_zero;   // allows returning position offsets of zero for invalid requests
-
-private:
-
-    static AP_WheelEncoder *_singleton;
 };
-
-namespace AP {
-    AP_WheelEncoder *wheelencoder();
-}

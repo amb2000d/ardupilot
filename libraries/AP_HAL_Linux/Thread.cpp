@@ -25,6 +25,7 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_Math.h>
+
 #include "Scheduler.h"
 
 #define STACK_POISON 0xBEBACAFE
@@ -84,9 +85,7 @@ void Thread::_poison_stack()
     void *stackp;
     uint32_t *p, *curr, *begin, *end;
 
-    // `pthread_self` should be used here since _ctx could be not initialized
-    // in a race condition.
-    if (pthread_getattr_np(pthread_self(), &attr) != 0 ||
+    if (pthread_getattr_np(_ctx, &attr) != 0 ||
         pthread_attr_getstack(&attr, &stackp, &stack_size) != 0 ||
         pthread_attr_getguardsize(&attr, &guard_size) != 0) {
         return;

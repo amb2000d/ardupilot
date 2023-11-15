@@ -14,9 +14,6 @@
  */
 #include "AP_Baro_BMP280.h"
 
-#if AP_BARO_BMP280_ENABLED
-
-#include <AP_Math/definitions.h>
 #include <utility>
 
 extern const AP_HAL::HAL &hal;
@@ -75,6 +72,8 @@ bool AP_Baro_BMP280::_init()
     }
     WITH_SEMAPHORE(_dev->get_semaphore());
 
+    _has_sample = false;
+
     _dev->set_speed(AP_HAL::Device::SPEED_HIGH);
 
     uint8_t whoami;
@@ -116,9 +115,6 @@ bool AP_Baro_BMP280::_init()
 
     _instance = _frontend.register_sensor();
 
-    _dev->set_device_type(DEVTYPE_BARO_BMP280);
-    set_bus_id(_instance, _dev->get_bus_id());
-    
     // request 50Hz update
     _dev->register_periodic_callback(20 * AP_USEC_PER_MSEC, FUNCTOR_BIND_MEMBER(&AP_Baro_BMP280::_timer, void));
 
@@ -127,7 +123,7 @@ bool AP_Baro_BMP280::_init()
 
 
 
-//  accumulate a new sensor reading
+//  acumulate a new sensor reading
 void AP_Baro_BMP280::_timer(void)
 {
     uint8_t buf[6];
@@ -145,13 +141,12 @@ void AP_Baro_BMP280::update(void)
 {
     WITH_SEMAPHORE(_sem);
 
-    if (_pressure_count == 0) {
+    if (!_has_sample) {
         return;
     }
 
-    _copy_to_frontend(_instance, _pressure_sum/_pressure_count, _temperature);
-    _pressure_count = 0;
-    _pressure_sum = 0;
+    _copy_to_frontend(_instance, _pressure, _temperature);
+    _has_sample = false;
 }
 
 // calculate temperature
@@ -165,7 +160,7 @@ void AP_Baro_BMP280::_update_temperature(int32_t temp_raw)
     _t_fine = var1 + var2;
     t = (_t_fine * 5 + 128) >> 8;
 
-    const float temp = ((float)t) * 0.01f;
+    const float temp = ((float)t) / 100.0f;
 
     WITH_SEMAPHORE(_sem);
     
@@ -203,8 +198,6 @@ void AP_Baro_BMP280::_update_pressure(int32_t press_raw)
     
     WITH_SEMAPHORE(_sem);
     
-    _pressure_sum += press;
-    _pressure_count++;
+    _pressure = press;
+    _has_sample = true;
 }
-
-#endif  // AP_BARO_BMP280_ENABLED

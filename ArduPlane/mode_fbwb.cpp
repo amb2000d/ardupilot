@@ -3,7 +3,11 @@
 
 bool ModeFBWB::_enter()
 {
-#if HAL_SOARING_ENABLED
+    plane.throttle_allows_nudging = false;
+    plane.auto_throttle_mode = true;
+    plane.auto_navigation_mode = false;
+
+#if SOARING_ENABLED == ENABLED
     // for ArduSoar soaring_controller
     plane.g2.soaring_controller.init_cruising();
 #endif

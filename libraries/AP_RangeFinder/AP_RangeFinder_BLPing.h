@@ -1,87 +1,46 @@
 #pragma once
 
-#include "AP_RangeFinder_config.h"
+#include "RangeFinder.h"
+#include "RangeFinder_Backend.h"
 
-#if AP_RANGEFINDER_BLPING_ENABLED
-
-#include "AP_RangeFinder_Backend_Serial.h"
-
-/**
- * @brief Simple class to deal with Ping Protocol
- *
- *  Protocol documentation can be found here: https:* github.com/bluerobotics/ping-protocol
- *
- *  Byte     Type        Name            Description
- *  --------------------------------------------------------------------------------------------------------------
- *  0        uint8_t     start1          'B'
- *  1        uint8_t     start2          'R'
- *  2-3      uint16_t    payload_length  number of bytes in payload (low byte, high byte)
- *  4-5      uint16_t    message id      message id (low byte, high byte)
- *  6        uint8_t     src_device_id   id of device sending the message
- *  7        uint8_t     dst_device_id   id of device of the intended recipient
- *  8-n      uint8_t[]   payload         message payload
- *  (n+1)-(n+2)  uint16_t    checksum    the sum of all the non-checksum bytes in the message (low byte, high byte)
- */
-class PingProtocol {
-    static constexpr uint8_t _frame_header1 = 0x42; // // header first byte ('B')
-    static constexpr uint8_t _frame_header2 = 0x52; // // header first byte ('R')
-    static constexpr uint16_t _src_id = 0; // vehicle's source id
-    static constexpr uint16_t _dst_id = 1; // sensor's id
+class AP_RangeFinder_BLPing : public AP_RangeFinder_Backend
+{
 
 public:
-    enum class MessageId {
-        INVALID = 0,
-        SET_PING_INTERVAL = 1004,
-        DISTANCE_SIMPLE = 1211,
-        CONTINUOUS_START = 1400,
-    };
 
-    /**
-     * @brief Process a single byte received on serial port
-     *  return a valid MessageId if there is a message in buffer.
-     *
-     * @param byte
-     * @return MessageId
-     */
-    MessageId parse_byte(uint8_t b);
+    // constructor
+    AP_RangeFinder_BLPing(RangeFinder::RangeFinder_State &_state,
+                          AP_RangeFinder_Params &_params,
+                          uint8_t serial_instance);
 
-    /**
-     * @brief Send a message with a defined payload
-     *
-     * @param uart
-     * @param msgid
-     * @param payload
-     * @param payload_len
-     */
-    void send_message(AP_HAL::UARTDriver *uart, PingProtocol::MessageId msg_id, const uint8_t *payload, uint16_t payload_len) const;
+    // static detection function
+    static bool detect(uint8_t serial_instance);
 
-    /**
-     * @brief Get distance from message
-     *
-     * @return uint32_t
-     */
-    uint32_t get_distance_mm() const;
-
-    /**
-     * @brief Get confidence from message
-     *
-     * @return uint8_t
-     */
-    uint8_t get_confidence() const;
-
-    /**
-     * @brief Get the message id available in bufffer
-     *
-     * @return MessageId
-     */
-    MessageId get_message_id() const { return static_cast<MessageId>(msg.id); };
+    // update state
+    void update(void) override;
 
 protected:
-    /**
-     * @brief State for the parser logic
-     *
-     */
-    enum class ParserState {
+
+    virtual MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const override {
+        return MAV_DISTANCE_SENSOR_ULTRASOUND;
+    }
+
+private:
+
+    void init_sensor();
+
+    // send message to sensor
+    void send_message(uint16_t msgid, const uint8_t *payload, uint16_t payload_len);
+
+    // read a distance from the sensor
+    bool get_reading(uint16_t &reading_cm);
+
+    // process one byte received on serial port
+    // returns true if a distance message has been successfully parsed
+    // state is stored in msg structure
+    bool parse_byte(uint8_t b);
+
+    enum class ParseState {
         HEADER1 = 0,
         HEADER2,
         LEN_L,
@@ -95,98 +54,18 @@ protected:
         CRC_H
     };
 
-    /**
-     * @brief Structure holding the last message available with its state
-     *
-     */
+    AP_HAL::UARTDriver *uart;
+    uint32_t last_init_ms;      // system time that sensor was last initialised
+    uint16_t distance_cm;       // latest distance
+
+    // structure holding latest message contents
     struct {
-        ParserState state;      // state of incoming message processing
-        bool done;              // inform if the message is complete or not
+        ParseState state;       // state of incoming message processing
         uint8_t payload[20];    // payload
         uint16_t payload_len;   // latest message payload length
-        uint16_t id;            // latest message's message id
+        uint16_t msgid;         // latest message's message id
         uint16_t payload_recv;  // number of message's payload bytes received so far
         uint16_t crc;           // latest message's crc
         uint16_t crc_expected;  // latest message's expected crc
     } msg;
 };
-
-/**
- * @brief Class for Blue Robotics Ping1D sensor
- *
- */
-class AP_RangeFinder_BLPing : public AP_RangeFinder_Backend_Serial
-{
-    static constexpr uint16_t _sensor_rate_ms = 50; // initialise sensor at no more than 20hz
-
-public:
-
-    static AP_RangeFinder_Backend_Serial *create(
-        RangeFinder::RangeFinder_State &_state,
-        AP_RangeFinder_Params &_params) {
-        return new AP_RangeFinder_BLPing(_state, _params);
-    }
-
-    /**
-     * @brief Update class state
-     *
-     */
-    void update(void) override;
-
-    /**
-     * @brief Get the reading confidence
-     * 100 is best quality, 0 is worst
-     *
-     */
-    bool get_signal_quality_pct(int8_t &quality_pct) const override WARN_IF_UNUSED;
-
-protected:
-    /**
-     * @brief Return the sensor type
-     *
-     * @return MAV_DISTANCE_SENSOR
-     */
-    MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const override {
-        return MAV_DISTANCE_SENSOR_ULTRASOUND;
-    }
-
-    /**
-     * @brief Sensor protocol class
-     *
-     */
-    PingProtocol protocol;
-
-private:
-
-    using AP_RangeFinder_Backend_Serial::AP_RangeFinder_Backend_Serial;
-
-    /**
-     * @brief Do the necessary sensor initiation
-     *
-     */
-    void init_sensor();
-
-    /**
-     * @brief Read serial interface and calculate new distance
-     *
-     * @param reading_m
-     * @return true
-     * @return false
-     */
-    bool get_reading(float &reading_m) override;
-
-    /**
-     * @brief Timeout between messages
-     *
-     * @return uint16_t
-     */
-    uint16_t read_timeout_ms() const override { return 1000; }
-
-    /**
-     * @brief system time that sensor was last initialised
-     *
-     */
-    uint32_t last_init_ms;
-};
-
-#endif

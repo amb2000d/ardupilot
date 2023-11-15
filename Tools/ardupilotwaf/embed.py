@@ -17,7 +17,8 @@ def embed_file(out, f, idx, embedded_name, uncompressed):
     try:
         contents = open(f,'rb').read()
     except Exception:
-        raise Exception("Failed to embed %s" % f)
+        print("Failed to embed %s" % f)
+        return False
 
     pad = 0
     if embedded_name.endswith("bootloader.bin"):
@@ -33,8 +34,7 @@ def embed_file(out, f, idx, embedded_name, uncompressed):
                     contents += bytes(chr(0xff))
             print("Padded %u bytes for %s to %u" % (pad, embedded_name, len(contents)))
 
-    crc = crc32(bytearray(contents))
-    write_encode(out, '__EXTFLASHFUNC__ static const uint8_t ap_romfs_%u[] = {' % idx)
+    write_encode(out, 'static const uint8_t ap_romfs_%u[] = {' % idx)
 
     compressed = tempfile.NamedTemporaryFile()
     if uncompressed:
@@ -60,17 +60,7 @@ def embed_file(out, f, idx, embedded_name, uncompressed):
     for c in b:
         write_encode(out, '%u,' % c)
     write_encode(out, '};\n\n');
-    return crc
-
-def crc32(bytes, crc=0):
-    '''crc32 equivalent to crc32_small() from AP_Math/crc.cpp'''
-    for byte in bytes:
-        crc ^= byte
-        for i in range(8):
-            mask = (-(crc & 1)) & 0xFFFFFFFF
-            crc >>= 1
-            crc ^= (0xEDB88320 & mask)
-    return crc
+    return True
 
 def create_embedded_h(filename, files, uncompressed=False):
     '''create a ap_romfs_embedded.h file'''
@@ -80,13 +70,10 @@ def create_embedded_h(filename, files, uncompressed=False):
 
     # remove duplicates and sort
     files = sorted(list(set(files)))
-    crc = {}
+
     for i in range(len(files)):
         (name, filename) = files[i]
-        try:
-            crc[filename] = embed_file(out, filename, i, name, uncompressed)
-        except Exception as e:
-            print(e)
+        if not embed_file(out, filename, i, name, uncompressed):
             return False
 
     write_encode(out, '''const AP_ROMFS::embedded_file AP_ROMFS::files[] = {\n''')
@@ -98,7 +85,7 @@ def create_embedded_h(filename, files, uncompressed=False):
         else:
             ustr = ''
         print("Embedding file %s:%s%s" % (name, filename, ustr))
-        write_encode(out, '{ "%s", sizeof(ap_romfs_%u), 0x%08x, ap_romfs_%u },\n' % (name, i, crc[filename], i))
+        write_encode(out, '{ "%s", sizeof(ap_romfs_%u), ap_romfs_%u },\n' % (name, i, i))
     write_encode(out, '};\n')
     out.close()
     return True

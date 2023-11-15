@@ -18,7 +18,6 @@
  *
  */
 
-#include <AP_AHRS/AP_AHRS.h>
 #include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_BoardConfig/AP_BoardConfig.h>
@@ -30,9 +29,6 @@ void loop();
 const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 
 float temperature;
-
-// create an AHRS object for get_airspeed_max
-AP_AHRS ahrs;
 
 // create airspeed object
 AP_Airspeed airspeed;
@@ -65,7 +61,6 @@ void setup()
     board_config.init();
 
     // initialize airspeed
-    // Note airspeed.set_log_bit(LOG_BIT) would need to be called in order to enable logging
     airspeed.init();
 
     airspeed.calibrate(false);
@@ -81,7 +76,7 @@ void loop(void)
 
         // current system time in milliseconds
         timer = AP_HAL::millis();
-        airspeed.update();
+        airspeed.update(false);
         airspeed.get_temperature(temperature);
 
         // print temperature and airspeed to console

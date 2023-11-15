@@ -4,14 +4,10 @@
  *  Created on: Oct 31, 2017
  *      Author: guy
  */
-#include "AP_Volz_Protocol.h"
-
-#if AP_VOLZ_ENABLED
-
 #include <AP_HAL/AP_HAL.h>
-
-#include <AP_SerialManager/AP_SerialManager.h>
 #include <SRV_Channel/SRV_Channel.h>
+
+#include "AP_Volz_Protocol.h"
 
 extern const AP_HAL::HAL& hal;
 
@@ -19,7 +15,7 @@ const AP_Param::GroupInfo AP_Volz_Protocol::var_info[] = {
     // @Param: MASK
     // @DisplayName: Channel Bitmask
     // @Description: Enable of volz servo protocol to specific channels
-    // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16,16:Channel17,17:Channel18,18:Channel19,19:Channel20,20:Channel21,21:Channel22,22:Channel23,23:Channel24,24:Channel25,25:Channel26,26:Channel27,28:Channel29,29:Channel30,30:Channel31,31:Channel32
+    // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16
     // @User: Standard
     AP_GROUPINFO("MASK",  1, AP_Volz_Protocol, bitmask, 0),
 
@@ -66,7 +62,7 @@ void AP_Volz_Protocol::update()
     uint8_t i;
     uint16_t value;
 
-    // loop for all channels
+    // loop for all 16 channels
     for (i=0; i<NUM_SERVO_CHANNELS; i++) {
         // check if current channel is needed for Volz protocol
         if (last_used_bitmask & (1U<<i)) {
@@ -77,15 +73,15 @@ void AP_Volz_Protocol::update()
             }
             
             // check if current channel PWM is within range
-            if (c->get_output_pwm() < VOLZ_PWM_POSITION_MIN) {
+            if (c->get_output_pwm() < c->get_output_min()) {
                 value = 0;
             } else {
-                value = c->get_output_pwm() - VOLZ_PWM_POSITION_MIN;
+                value = c->get_output_pwm() - c->get_output_min();
             }
 
             // scale the PWM value to Volz value
-            value = value * VOLZ_SCALE_VALUE / (VOLZ_PWM_POSITION_MAX - VOLZ_PWM_POSITION_MIN);
             value = value + VOLZ_EXTENDED_POSITION_MIN;
+            value = value * VOLZ_SCALE_VALUE / (c->get_output_max() - c->get_output_min());
 
             // make sure value stays in range
             if (value > VOLZ_EXTENDED_POSITION_MAX) {
@@ -159,5 +155,3 @@ void AP_Volz_Protocol::update_volz_bitmask(uint32_t new_bitmask)
 
     volz_time_frame_micros = channels_micros;
 }
-
-#endif  // AP_VOLZ_ENABLED

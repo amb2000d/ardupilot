@@ -40,9 +40,6 @@ extern const AP_HAL::HAL& hal;
     CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXFMINI
 #define APM_LINUX_RCIN_RATE             500
 #define APM_LINUX_IO_RATE               50
-#elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_OBAL_V1
-#define APM_LINUX_RCIN_RATE             50
-#define APM_LINUX_IO_RATE               50
 #else
 #define APM_LINUX_RCIN_RATE             100
 #define APM_LINUX_IO_RATE               50
@@ -58,9 +55,7 @@ extern const AP_HAL::HAL& hal;
     }
 
 Scheduler::Scheduler()
-{
-    CPU_ZERO(&_cpu_affinity);
-}
+{ }
 
 
 void Scheduler::init_realtime()
@@ -80,20 +75,9 @@ void Scheduler::init_realtime()
     mlockall(MCL_CURRENT|MCL_FUTURE);
 
     struct sched_param param = { .sched_priority = APM_LINUX_MAIN_PRIORITY };
-    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) == -1) {
+    if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
         AP_HAL::panic("Scheduler: failed to set scheduling parameters: %s",
                       strerror(errno));
-    }
-}
-
-void Scheduler::init_cpu_affinity()
-{
-    if (!CPU_COUNT(&_cpu_affinity)) {
-        return;
-    }
-
-    if (sched_setaffinity(0, sizeof(_cpu_affinity), &_cpu_affinity) != 0) {
-        AP_HAL::panic("Failed to set affinity for main process: %m");
     }
 }
 
@@ -116,7 +100,6 @@ void Scheduler::init()
     _main_ctx = pthread_self();
 
     init_realtime();
-    init_cpu_affinity();
 
     /* set barrier to N + 1 threads: worker threads + main */
     unsigned n_threads = ARRAY_SIZE(sched_table) + 1;
@@ -272,9 +255,14 @@ void Scheduler::_run_io(void)
 void Scheduler::_run_uarts()
 {
     // process any pending serial bytes
-    for (uint8_t i=0;i<hal.num_serial; i++) {
-        hal.serial(i)->_timer_tick();
-    }
+    hal.uartA->_timer_tick();
+    hal.uartB->_timer_tick();
+    hal.uartC->_timer_tick();
+    hal.uartD->_timer_tick();
+    hal.uartE->_timer_tick();
+    hal.uartF->_timer_tick();
+    hal.uartG->_timer_tick();
+    hal.uartH->_timer_tick();
 }
 
 void Scheduler::_rcin_task()
@@ -309,10 +297,10 @@ void Scheduler::_wait_all_threads()
     }
 }
 
-void Scheduler::set_system_initialized()
+void Scheduler::system_initialized()
 {
     if (_initialized) {
-        AP_HAL::panic("PANIC: scheduler::set_system_initialized called more than once");
+        AP_HAL::panic("PANIC: scheduler::system_initialized called more than once");
     }
 
     _initialized = true;
@@ -325,25 +313,13 @@ void Scheduler::reboot(bool hold_in_bootloader)
     exit(1);
 }
 
-#if APM_BUILD_TYPE(APM_BUILD_Replay) || APM_BUILD_TYPE(APM_BUILD_UNKNOWN)
 void Scheduler::stop_clock(uint64_t time_usec)
 {
-    if (time_usec < _stopped_clock_usec) {
-        ::fprintf(stderr, "Warning: setting time backwards from (%" PRIu64 ") to (%" PRIu64 ")\n", _stopped_clock_usec, time_usec);
-        return;
+    if (time_usec >= _stopped_clock_usec) {
+        _stopped_clock_usec = time_usec;
+        _run_io();
     }
-
-    _stopped_clock_usec = time_usec;
-    _run_io();
 }
-#else
-void Scheduler::stop_clock(uint64_t time_usec)
-{
-    // stop_clock() is not called outside of Replay, but we can't
-    // guard it in the header because of the vehicle-dependent-library
-    // checks in waf.
-}
-#endif
 
 bool Scheduler::SchedulerThread::_run()
 {
@@ -365,9 +341,16 @@ void Scheduler::teardown()
     _uart_thread.join();
 }
 
-// calculates an integer to be used as the priority for a newly-created thread
-uint8_t Scheduler::calculate_thread_priority(priority_base base, int8_t priority) const
+/*
+  create a new thread
+*/
+bool Scheduler::thread_create(AP_HAL::MemberProc proc, const char *name, uint32_t stack_size, priority_base base, int8_t priority)
 {
+    Thread *thread = new Thread{(Thread::task_t)proc};
+    if (!thread) {
+        return false;
+    }
+
     uint8_t thread_priority = APM_LINUX_IO_PRIORITY;
     static const struct {
         priority_base base;
@@ -391,21 +374,6 @@ uint8_t Scheduler::calculate_thread_priority(priority_base base, int8_t priority
             break;
         }
     }
-
-    return thread_priority;
-}
-
-/*
-  create a new thread
-*/
-bool Scheduler::thread_create(AP_HAL::MemberProc proc, const char *name, uint32_t stack_size, priority_base base, int8_t priority)
-{
-    Thread *thread = new Thread{(Thread::task_t)proc};
-    if (!thread) {
-        return false;
-    }
-
-    const uint8_t thread_priority = calculate_thread_priority(base, priority);
 
     // Add 256k to HAL-independent requested stack size
     thread->set_stack_size(256 * 1024 + stack_size);

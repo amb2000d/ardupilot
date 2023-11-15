@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 def convert(in_file, out_file):
     '''Compile mcm file to binary'''

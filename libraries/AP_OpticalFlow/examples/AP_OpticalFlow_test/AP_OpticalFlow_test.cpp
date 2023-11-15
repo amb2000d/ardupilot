@@ -13,7 +13,6 @@
 #include <AP_NavEKF3/AP_NavEKF3.h>
 #include <AP_OpticalFlow/AP_OpticalFlow.h>
 #include <AP_RangeFinder/AP_RangeFinder.h>
-#include <AP_SerialManager/AP_SerialManager.h>
 
 void setup();
 void loop();
@@ -28,13 +27,13 @@ public:
     AP_InertialSensor ins;
     AP_SerialManager serial_manager;
     RangeFinder sonar;
-    AP_AHRS ahrs{AP_AHRS::FLAG_ALWAYS_USE_EKF};
+    AP_AHRS_NavEKF ahrs{EKF2, EKF3, AP_AHRS_NavEKF::FLAG_ALWAYS_USE_EKF};
+    NavEKF2 EKF2{&ahrs, sonar};
+    NavEKF3 EKF3{&ahrs, sonar};
 };
 
 static DummyVehicle vehicle;
-#if AP_OPTICALFLOW_ENABLED
-static AP_OpticalFlow optflow;
-#endif
+static OpticalFlow optflow;
 
 void setup()
 {
@@ -42,16 +41,12 @@ void setup()
 
     hal.scheduler->delay(1000);
 
-#if AP_OPTICALFLOW_ENABLED
     // flowSensor initialization
     optflow.init(-1);
 
     if (!optflow.healthy()) {
-        hal.console->printf("Failed to initialise OpticalFlow");
+        hal.console->printf("Failed to initialise PX4Flow ");
     }
-#else
-    hal.console->printf("OpticalFlow compiled out");
-#endif
 
     hal.scheduler->delay(1000);
 }

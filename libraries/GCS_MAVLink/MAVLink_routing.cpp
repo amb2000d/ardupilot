@@ -16,10 +16,6 @@
 /// @file	MAVLink_routing.h
 /// @brief	handle routing of MAVLink packets by sysid/componentid
 
-#include "GCS_config.h"
-
-#if HAL_GCS_ENABLED
-
 #include <stdio.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
@@ -92,41 +88,27 @@ detect a reset of the flight controller, which implies a reset of its
 routing table.
 
 */
-bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_message_t &msg)
+bool MAVLink_routing::check_and_forward(mavlink_channel_t in_channel, const mavlink_message_t &msg)
 {
-#if HAL_SOLO_GIMBAL_ENABLED
-    // check if a Gopro is connected. If yes, we allow the routing
-    // of mavlink messages to a private channel (Solo Gimbal case)
-    if (!gopro_status_check && (msg.msgid == MAVLINK_MSG_ID_GOPRO_HEARTBEAT)) {
-       gopro_status_check = true;
-       gcs().send_text(MAV_SEVERITY_NOTICE, "GoPro in Solo gimbal detected");
-    }
-#endif // HAL_SOLO_GIMBAL_ENABLED
-
     // handle the case of loopback of our own messages, due to
     // incorrect serial configuration.
     if (msg.sysid == mavlink_system.sysid &&
         msg.compid == mavlink_system.compid) {
-        return false;
+        return true;
     }
 
-    // learn new routes including private channels
-    // so that find_mav_type works for all channels
-    learn_route(in_link, msg);
+    // learn new routes
+    learn_route(in_channel, msg);
 
     if (msg.msgid == MAVLINK_MSG_ID_RADIO ||
         msg.msgid == MAVLINK_MSG_ID_RADIO_STATUS) {
         // don't forward RADIO packets
         return true;
     }
-
-    const bool from_private_channel = in_link.is_private();
-
+    
     if (msg.msgid == MAVLINK_MSG_ID_HEARTBEAT) {
         // heartbeat needs special handling
-        if (!from_private_channel) {
-            handle_heartbeat(in_link, msg);
-        }
+        handle_heartbeat(in_channel, msg);
         return true;
     }
 
@@ -147,18 +129,6 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
                                             (target_component == mavlink_system.compid));
     bool process_locally = match_system && match_component;
 
-    // don't ever forward data from a private channel
-    // unless a Gopro camera is connected to a Solo gimbal
-    bool should_process_locally = from_private_channel;
-#if HAL_SOLO_GIMBAL_ENABLED
-    if (gopro_status_check) {
-        should_process_locally = false;
-    }
-#endif
-    if (should_process_locally) {
-        return process_locally;
-    }
-
     if (process_locally && !broadcast_system && !broadcast_component) {
         // nothing more to do - it can only be for us
         return true;
@@ -169,14 +139,9 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
     bool sent_to_chan[MAVLINK_COMM_NUM_BUFFERS];
     memset(sent_to_chan, 0, sizeof(sent_to_chan));
     for (uint8_t i=0; i<num_routes; i++) {
-
+    
         // Skip if channel is private and the target system or component IDs do not match
-        GCS_MAVLINK *out_link = gcs().chan(routes[i].channel);
-        if (out_link == nullptr) {
-            // this is bad
-            continue;
-        }
-        if (out_link->is_private() &&
+        if ((GCS_MAVLINK::is_private(routes[i].channel)) &&
             (target_system != routes[i].sysid ||
              target_component != routes[i].compid)) {
             continue;
@@ -187,12 +152,14 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
                                   target_component == routes[i].compid ||
                                   !match_system))) {
 
-            if (&in_link != out_link && !sent_to_chan[routes[i].channel]) {
-                if (out_link->check_payload_size(msg.len)) {
+            if (in_channel != routes[i].channel && !sent_to_chan[routes[i].channel]) {
+                
+                if (comm_get_txspace(routes[i].channel) >= ((uint16_t)msg.len) +
+                    GCS_MAVLINK::packet_overhead_chan(routes[i].channel)) {
 #if ROUTING_DEBUG
                     ::printf("fwd msg %u from chan %u on chan %u sysid=%d compid=%d\n",
                              msg.msgid,
-                             (unsigned)in_link->get_chan(),
+                             (unsigned)in_channel,
                              (unsigned)routes[i].channel,
                              (int)target_system,
                              (int)target_component);
@@ -205,8 +172,7 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
         }
     }
 
-    if ((!forwarded && match_system) ||
-        broadcast_system) {
+    if (!forwarded && match_system) {
         process_locally = true;
     }
 
@@ -248,7 +214,7 @@ void MAVLink_routing::send_to_components(const char *pkt, const mavlink_msg_entr
         }
 #if ROUTING_DEBUG
         ::printf("send msg %u on chan %u sysid=%u compid=%u\n",
-                 entry->msgid,
+                 msg.msgid,
                  (unsigned)routes[i].channel,
                  (unsigned)routes[i].sysid,
                  (unsigned)routes[i].compid);
@@ -290,44 +256,16 @@ bool MAVLink_routing::find_by_mavtype(uint8_t mavtype, uint8_t &sysid, uint8_t &
 }
 
 /*
-  search for the first vehicle or component in the routing table with given mav_type and component id and retrieve its sysid and channel
-  returns true if a match is found
- */
-bool MAVLink_routing::find_by_mavtype_and_compid(uint8_t mavtype, uint8_t compid, uint8_t &sysid, mavlink_channel_t &channel) const
-{
-    for (uint8_t i=0; i<num_routes; i++) {
-        if ((routes[i].mavtype == mavtype) && (routes[i].compid == compid)) {
-            sysid = routes[i].sysid;
-            channel = routes[i].channel;
-            return true;
-        }
-    }
-    return false;
-}
-
-/*
   see if the message is for a new route and learn it
 */
-void MAVLink_routing::learn_route(GCS_MAVLINK &in_link, const mavlink_message_t &msg)
+void MAVLink_routing::learn_route(mavlink_channel_t in_channel, const mavlink_message_t &msg)
 {
     uint8_t i;
-    if (msg.sysid == 0) {
-        // don't learn routes to the broadcast system
+    if (msg.sysid == 0 ||
+        (msg.sysid == mavlink_system.sysid &&
+         msg.compid == mavlink_system.compid)) {
         return;
     }
-    if (msg.sysid == mavlink_system.sysid &&
-        msg.compid == mavlink_system.compid) {
-        // don't learn routes to ourself.  We know where we are.
-        return;
-    }
-    if (msg.sysid == mavlink_system.sysid &&
-        msg.compid == MAV_COMP_ID_ALL) {
-        // don't learn routes to the broadcast component ID for our
-        // own system id.  We should still broadcast these, but we
-        // should also process them locally.
-        return;
-    }
-    const mavlink_channel_t in_channel = in_link.get_chan();
     for (i=0; i<num_routes; i++) {
         if (routes[i].sysid == msg.sysid &&
             routes[i].compid == msg.compid &&
@@ -361,12 +299,10 @@ void MAVLink_routing::learn_route(GCS_MAVLINK &in_link, const mavlink_message_t 
   propagation heartbeat messages need to be forwarded on all channels
   except channels where the sysid/compid of the heartbeat could come from
 */
-void MAVLink_routing::handle_heartbeat(GCS_MAVLINK &link, const mavlink_message_t &msg)
+void MAVLink_routing::handle_heartbeat(mavlink_channel_t in_channel, const mavlink_message_t &msg)
 {
-    uint16_t mask = GCS_MAVLINK::active_channel_mask() & ~GCS_MAVLINK::private_channel_mask();
-
-    const mavlink_channel_t in_channel = link.get_chan();
-
+    uint16_t mask = GCS_MAVLINK::active_channel_mask();
+    
     // don't send on the incoming channel. This should only matter if
     // the routing table is full
     mask &= ~(1U<<(in_channel-MAVLINK_COMM_0));
@@ -425,4 +361,3 @@ void MAVLink_routing::get_targets(const mavlink_message_t &msg, int16_t &sysid, 
     }
 }
 
-#endif  // HAL_GCS_ENABLED

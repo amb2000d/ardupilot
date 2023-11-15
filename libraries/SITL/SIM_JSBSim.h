@@ -18,14 +18,6 @@
 
 #pragma once
 
-#include <AP_HAL/AP_HAL_Boards.h>
-
-#ifndef HAL_SIM_JSBSIM_ENABLED
-#define HAL_SIM_JSBSIM_ENABLED (CONFIG_HAL_BOARD == HAL_BOARD_SITL)
-#endif
-
-#if HAL_SIM_JSBSIM_ENABLED
-
 #include <AP_HAL/utility/Socket.h>
 
 #include "SIM_Aircraft.h"
@@ -82,8 +74,8 @@ private:
     bool open_fdm_socket(void);
     void send_servos(const struct sitl_input &input);
     void recv_fdm(const struct sitl_input &input);
-    void check_stdout(void) const;
-    bool expect(const char *str) const;
+    void check_stdout(void);
+    bool expect(const char *str);
 
     void drain_control_socket();
 };
@@ -184,5 +176,3 @@ public:
 };
 
 } // namespace SITL
-
-#endif  // HAL_SIM_JSBSIM_ENABLED

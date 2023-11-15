@@ -88,11 +88,11 @@ void Sub::failsafe_sensors_check()
     gcs().send_text(MAV_SEVERITY_CRITICAL, "Depth sensor error!");
     AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_SENSORS, LogErrorCode::BAD_DEPTH);
 
-    if (control_mode == Mode::Number::ALT_HOLD || control_mode == Mode::Number::SURFACE || sub.flightmode->requires_GPS()) {
+    if (control_mode == ALT_HOLD || control_mode == SURFACE || mode_requires_GPS(control_mode)) {
         // This should always succeed
-        if (!set_mode(Mode::Number::MANUAL, ModeReason::BAD_DEPTH)) {
+        if (!set_mode(MANUAL, ModeReason::BAD_DEPTH)) {
             // We should never get here
-            arming.disarm(AP_Arming::Method::BADFLOWOFCONTROL);
+            arming.disarm();
         }
     }
 }
@@ -110,16 +110,17 @@ void Sub::failsafe_ekf_check()
 
     float posVar, hgtVar, tasVar;
     Vector3f magVar;
+    Vector2f offset;
     float compass_variance;
     float vel_variance;
-    ahrs.get_variances(vel_variance, posVar, hgtVar, magVar, tasVar);
+    ahrs.get_variances(vel_variance, posVar, hgtVar, magVar, tasVar, offset);
     compass_variance = magVar.length();
 
     if (compass_variance < g.fs_ekf_thresh && vel_variance < g.fs_ekf_thresh) {
         last_ekf_good_ms = AP_HAL::millis();
         failsafe.ekf = false;
         AP_Notify::flags.ekf_bad = false;
-        return;
+        return;;
     }
 
     // Bad EKF for 2 solid seconds triggers failsafe
@@ -145,7 +146,7 @@ void Sub::failsafe_ekf_check()
     }
 
     if (g.fs_ekf_action == FS_EKF_ACTION_DISARM) {
-        arming.disarm(AP_Arming::Method::EKFFAILSAFE);
+        arming.disarm();
     }
 }
 
@@ -156,10 +157,10 @@ void Sub::handle_battery_failsafe(const char* type_str, const int8_t action)
 
     switch((Failsafe_Action)action) {
         case Failsafe_Action_Surface:
-            set_mode(Mode::Number::SURFACE, ModeReason::BATTERY_FAILSAFE);
+            set_mode(SURFACE, ModeReason::BATTERY_FAILSAFE);
             break;
         case Failsafe_Action_Disarm:
-            arming.disarm(AP_Arming::Method::BATTERYFAILSAFE);
+            arming.disarm();
             break;
         case Failsafe_Action_Warn:
         case Failsafe_Action_None:
@@ -193,7 +194,7 @@ void Sub::failsafe_pilot_input_check()
     set_neutral_controls();
 
     if(g.failsafe_pilot_input == FS_PILOT_INPUT_DISARM) {
-        arming.disarm(AP_Arming::Method::PILOT_INPUT_FAILSAFE);
+        arming.disarm();
     }
 #endif
 }
@@ -299,7 +300,7 @@ void Sub::failsafe_leak_check()
 
     // Handle failsafe action
     if (failsafe.leak && g.failsafe_leak == FS_LEAK_SURFACE && motors.armed()) {
-        set_mode(Mode::Number::SURFACE, ModeReason::LEAK_FAILSAFE);
+        set_mode(SURFACE, ModeReason::LEAK_FAILSAFE);
     }
 }
 
@@ -308,20 +309,14 @@ void Sub::failsafe_gcs_check()
 {
     // return immediately if we have never had contact with a gcs, or if gcs failsafe action is disabled
     // this also checks to see if we have a GCS failsafe active, if we do, then must continue to process the logic for recovery from this state.
-    if (!g.failsafe_gcs && g.failsafe_gcs == FS_GCS_DISABLED) {
-        return;
-    }
-
-    const uint32_t gcs_last_seen_ms = gcs().sysid_myggcs_last_seen_time_ms();
-    if (gcs_last_seen_ms == 0) {
-        // we've never seen a GCS, so we don't failsafe if we stop seeing it
+    if (failsafe.last_heartbeat_ms == 0 || (!g.failsafe_gcs && g.failsafe_gcs == FS_GCS_DISABLED)) {
         return;
     }
 
     uint32_t tnow = AP_HAL::millis();
 
     // Check if we have gotten a GCS heartbeat recently (GCS sysid must match SYSID_MYGCS parameter)
-    if (tnow - gcs_last_seen_ms < FS_GCS_TIMEOUT_MS) {
+    if (tnow - failsafe.last_heartbeat_ms < FS_GCS_TIMEOUT_MS) {
         // Log event if we are recovering from previous gcs failsafe
         if (failsafe.gcs) {
             AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_GCS, LogErrorCode::FAILSAFE_RESOLVED);
@@ -350,14 +345,14 @@ void Sub::failsafe_gcs_check()
 
     // handle failsafe action
     if (g.failsafe_gcs == FS_GCS_DISARM) {
-        arming.disarm(AP_Arming::Method::GCSFAILSAFE);
+        arming.disarm();
     } else if (g.failsafe_gcs == FS_GCS_HOLD && motors.armed()) {
-        if (!set_mode(Mode::Number::ALT_HOLD, ModeReason::GCS_FAILSAFE)) {
-            arming.disarm(AP_Arming::Method::GCS_FAILSAFE_HOLDFAILED);
+        if (!set_mode(ALT_HOLD, ModeReason::GCS_FAILSAFE)) {
+            arming.disarm();
         }
     } else if (g.failsafe_gcs == FS_GCS_SURFACE && motors.armed()) {
-        if (!set_mode(Mode::Number::SURFACE, ModeReason::GCS_FAILSAFE)) {
-            arming.disarm(AP_Arming::Method::GCS_FAILSAFE_SURFACEFAILED);
+        if (!set_mode(SURFACE, ModeReason::GCS_FAILSAFE)) {
+            arming.disarm();
         }
     }
 }
@@ -380,7 +375,7 @@ void Sub::failsafe_crash_check()
     }
 
     // return immediately if we are not in an angle stabilized flight mode
-    if (control_mode == Mode::Number::ACRO || control_mode == Mode::Number::MANUAL) {
+    if (control_mode == ACRO || control_mode == MANUAL) {
         last_crash_check_pass_ms = tnow;
         failsafe.crash = false;
         return;
@@ -416,7 +411,7 @@ void Sub::failsafe_crash_check()
 
     // disarm motors
     if (g.fs_crash_check == FS_CRASH_DISARM) {
-        arming.disarm(AP_Arming::Method::CRASH);
+        arming.disarm();
     }
 }
 
@@ -425,7 +420,7 @@ void Sub::failsafe_crash_check()
 void Sub::failsafe_terrain_check()
 {
     // trigger with 5 seconds of failures while in AUTO mode
-    bool valid_mode = (control_mode == Mode::Number::AUTO || control_mode == Mode::Number::GUIDED);
+    bool valid_mode = (control_mode == AUTO || control_mode == GUIDED);
     bool timeout = (failsafe.terrain_last_failure_ms - failsafe.terrain_first_failure_ms) > FS_TERRAIN_TIMEOUT_MS;
     bool trigger_event = valid_mode && timeout;
 
@@ -470,7 +465,7 @@ void Sub::failsafe_terrain_on_event()
     AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_TERRAIN, LogErrorCode::FAILSAFE_OCCURRED);
 
     // If rangefinder is enabled, we can recover from this failsafe
-    if (!rangefinder_state.enabled || !sub.mode_auto.auto_terrain_recover_start()) {
+    if (!rangefinder_state.enabled || !auto_terrain_recover_start()) {
         failsafe_terrain_act();
     }
 
@@ -482,19 +477,19 @@ void Sub::failsafe_terrain_act()
 {
     switch (g.failsafe_terrain) {
     case FS_TERRAIN_HOLD:
-        if (!set_mode(Mode::Number::POSHOLD, ModeReason::TERRAIN_FAILSAFE)) {
-            set_mode(Mode::Number::ALT_HOLD, ModeReason::TERRAIN_FAILSAFE);
+        if (!set_mode(POSHOLD, ModeReason::TERRAIN_FAILSAFE)) {
+            set_mode(ALT_HOLD, ModeReason::TERRAIN_FAILSAFE);
         }
         AP_Notify::events.failsafe_mode_change = 1;
         break;
 
     case FS_TERRAIN_SURFACE:
-        set_mode(Mode::Number::SURFACE, ModeReason::TERRAIN_FAILSAFE);
+        set_mode(SURFACE, ModeReason::TERRAIN_FAILSAFE);
         AP_Notify::events.failsafe_mode_change = 1;
         break;
 
     case FS_TERRAIN_DISARM:
     default:
-        arming.disarm(AP_Arming::Method::TERRAINFAILSAFE);
+        arming.disarm();
     }
 }

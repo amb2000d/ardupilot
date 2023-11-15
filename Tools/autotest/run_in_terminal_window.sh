@@ -28,10 +28,8 @@ if [ -n "$SITL_RITW_TERMINAL" ]; then
   printf "%q " "$@" >>"$FILEPATH"
   chmod +x "$FILEPATH"
   $SITL_RITW_TERMINAL "$FILEPATH" &
-elif [ "$TERM" = "screen" ] && [ -n "$TMUX" ]; then
-  tmux new-window -dn "$name" "$*"
 elif [ -n "$DISPLAY" -a -n "$(which osascript)" ]; then
-  osascript -e 'tell application "Terminal" to do script "'"cd $(pwd) && clear && $* "'"'
+  osascript -e 'tell application "Terminal" to do script "'"$* "'"'
 elif [ -n "$DISPLAY" -a -n "$(which xterm)" ]; then
   if [ $SITL_RITW_MINIMIZE -eq 1 ]; then
       ICONIC=-iconic
@@ -43,7 +41,7 @@ elif [ -n "$DISPLAY" -a -n "$(which gnome-terminal)" ]; then
   gnome-terminal -e "$*"
 elif [ -n "$STY" ]; then
   # We are running inside of screen, try to start it there
-  screen -X screen -t "$name" bash -c "cd $PWD; $*"
+  screen -X screen -t "$name" $*
 else
   filename="/tmp/$name.log"
   echo "RiTW: Window access not found, logging to $filename"

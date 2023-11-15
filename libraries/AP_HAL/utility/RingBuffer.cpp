@@ -7,14 +7,11 @@ ByteBuffer::ByteBuffer(uint32_t _size)
 {
     buf = (uint8_t*)calloc(1, _size);
     size = buf ? _size : 0;
-    external_buf = false;
 }
 
 ByteBuffer::~ByteBuffer(void)
 {
-    if (!external_buf) {
-        free(buf);
-    }
+    free(buf);
 }
 
 /*
@@ -22,10 +19,6 @@ ByteBuffer::~ByteBuffer(void)
  */
 bool ByteBuffer::set_size(uint32_t _size)
 {
-    if (external_buf) {
-        // resize not supported with external buffer
-        return false;
-    }
     head = tail = 0;
     if (_size != size) {
         free(buf);
@@ -39,20 +32,6 @@ bool ByteBuffer::set_size(uint32_t _size)
     }
 
     return true;
-}
-
-/*
-  set buffer size, accepting a smaller size if desired size isn't achievable
- */
-bool ByteBuffer::set_size_best(uint32_t _size)
-{
-    while (_size > 0) {
-        if (set_size(_size)) {
-            return true;
-        }
-        _size = (3 * _size)/4;
-    }
-    return false;
 }
 
 uint32_t ByteBuffer::available(void) const
@@ -92,7 +71,7 @@ uint32_t ByteBuffer::space(void) const
     return ret;
 }
 
-bool ByteBuffer::is_empty(void) const
+bool ByteBuffer::empty(void) const
 {
     return head == tail;
 }

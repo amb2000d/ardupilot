@@ -1,14 +1,10 @@
 #pragma once
 
-#define AP_PARAM_VEHICLE_NAME sub
-
 #include <AP_Common/AP_Common.h>
 
 #include <AP_Gripper/AP_Gripper.h>
-#include <AP_Stats/AP_Stats.h>
-#include <AP_Arming/AP_Arming.h>
 
-#if AP_SCRIPTING_ENABLED
+#ifdef ENABLE_SCRIPTING
 #include <AP_Scripting/AP_Scripting.h>
 #endif
 
@@ -49,7 +45,7 @@ public:
         // Layout version number, always key zero.
         //
         k_param_format_version = 0,
-        k_param_software_type, // unused
+        k_param_software_type, // unusued
 
         k_param_g2, // 2nd block of parameters
 
@@ -70,7 +66,7 @@ public:
         k_param_serial_manager, // Serial ports, AP_SerialManager
         k_param_notify, // Notify Library, AP_Notify
         k_param_arming = 26, // Arming checks
-        k_param_can_mgr,
+        k_param_BoardConfig_CAN,
 
         // Sensor objects
         k_param_ins = 30, // AP_InertialSensor
@@ -91,7 +87,7 @@ public:
         k_param_pos_control, // Position Control
         k_param_wp_nav, // Waypoint navigation
         k_param_mission, // Mission library
-        k_param_fence_old, // only used for conversion
+        k_param_fence, // Fence Library
         k_param_terrain, // Terrain database
         k_param_rally, // Disabled
         k_param_circle_nav, // Disabled
@@ -190,7 +186,7 @@ public:
         k_param_gcs_pid_mask = 178,
         k_param_throttle_filt,
         k_param_throttle_deadzone, // Used in auto-throttle modes
-        k_param_terrain_follow = 182,   // deprecated
+        k_param_terrain_follow = 182,
         k_param_rc_feel_rp,
         k_param_throttle_gain,
         k_param_cam_tilt_center, // deprecated
@@ -210,15 +206,10 @@ public:
         // RC_Mapper Library
         k_param_rcmap, // Disabled
 
-        k_param_gcs4,
-        k_param_gcs5,
-        k_param_gcs6,
-
         k_param_cam_slew_limit = 237, // deprecated
         k_param_lights_steps,
         k_param_pilot_speed_dn,
 
-        k_param_vehicle = 257, // vehicle common block of parameters
     };
 
     AP_Int16        format_version;
@@ -267,6 +258,10 @@ public:
     AP_Int8         fs_crash_check;
     AP_Float        fs_ekf_thresh;
     AP_Int16        gcs_pid_mask;
+
+#if AP_TERRAIN_AVAILABLE && AC_TERRAIN
+    AP_Int8         terrain_follow;
+#endif
 
     AP_Int16        rc_speed; // speed of fast RC Channels in Hz
 
@@ -320,19 +315,15 @@ public:
 class ParametersG2 {
 public:
     ParametersG2(void);
-#if STATS_ENABLED == ENABLED
-    // vehicle statistics
-    AP_Stats stats;
-#endif
 
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo var_info[];
 
-#if AP_GRIPPER_ENABLED
+#if GRIPPER_ENABLED
     AP_Gripper gripper;
 #endif
 
-#if HAL_PROXIMITY_ENABLED
+#if PROXIMITY_ENABLED == ENABLED
     // proximity (aka object avoidance) library
     AP_Proximity proximity;
 #endif
@@ -343,29 +334,11 @@ public:
     // control over servo output ranges
     SRV_Channels servo_channels;
 
-#if AP_SCRIPTING_ENABLED
+#ifdef ENABLE_SCRIPTING
     AP_Scripting scripting;
-#endif // AP_SCRIPTING_ENABLED
+#endif // ENABLE_SCRIPTING
+
 };
 
 extern const AP_Param::Info        var_info[];
 
-// Sub-specific default parameters
-static const struct AP_Param::defaults_table_struct defaults_table[] = {
-    { "BRD_SAFETY_DEFLT",    0 },
-    { "ARMING_CHECK",        AP_Arming::ARMING_CHECK_RC |
-                             AP_Arming::ARMING_CHECK_VOLTAGE |
-                             AP_Arming::ARMING_CHECK_BATTERY},
-    { "CIRCLE_RATE",         2.0f},
-    { "ATC_ACCEL_Y_MAX",     110000.0f},
-    { "RC3_TRIM",            1100},
-    { "COMPASS_OFFS_MAX",    1000},
-    { "INS_GYR_CAL",         0},
-    { "MNT1_TYPE",           1},
-    { "MNT1_DEFLT_MODE",     MAV_MOUNT_MODE_RC_TARGETING},
-    { "MNT1_RC_RATE",        30},
-    { "RC7_OPTION",          214},   // MOUNT1_YAW
-    { "RC8_OPTION",          213},   // MOUNT1_PITCH
-    { "MOT_PWM_MIN",         1100},
-    { "MOT_PWM_MAX",         1900},
-};

@@ -35,7 +35,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-bool HALSITL::UARTDriver::set_speed(int speed) const
+bool HALSITL::UARTDriver::set_speed(int speed)
 {
     if (_fd < 0) {
         return false;

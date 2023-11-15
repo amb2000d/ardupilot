@@ -14,10 +14,7 @@
  */
 #include "AP_Baro_BMP388.h"
 
-#if AP_BARO_BMP388_ENABLED
-
 #include <utility>
-#include <AP_Math/AP_Math.h>
 
 extern const AP_HAL::HAL &hal;
 
@@ -27,10 +24,8 @@ extern const AP_HAL::HAL &hal;
 #define BMP388_MODE BMP388_MODE_NORMAL
 
 #define BMP388_ID            0x50
-#define BMP390_ID            0x60
 
 #define BMP388_REG_ID        0x00
-#define BMP388_REV_ID_ADDR   0x01
 #define BMP388_REG_ERR       0x02
 #define BMP388_REG_STATUS    0x03
 #define BMP388_REG_PRESS     0x04 // 24 bit
@@ -81,6 +76,8 @@ bool AP_Baro_BMP388::init()
     }
     WITH_SEMAPHORE(dev->get_semaphore());
 
+    has_sample = false;
+
     dev->set_speed(AP_HAL::Device::SPEED_HIGH);
 
     // setup to allow reads on SPI
@@ -92,18 +89,9 @@ bool AP_Baro_BMP388::init()
     dev->write_register(BMP388_REG_PWR_CTRL, 0x33, true);
     
     uint8_t whoami;
-    if (!read_registers(BMP388_REG_ID, &whoami, 1)) {
-        return false;
-    }
-
-    switch (whoami) {
-    case BMP388_ID:
-        dev->set_device_type(DEVTYPE_BARO_BMP388);
-        break;
-    case BMP390_ID:
-        dev->set_device_type(DEVTYPE_BARO_BMP390);
-        break;
-    default:
+    if (!read_registers(BMP388_REG_ID, &whoami, 1)  ||
+        whoami != BMP388_ID) {
+        // not a BMP388
         return false;
     }
 
@@ -120,8 +108,6 @@ bool AP_Baro_BMP388::init()
 
     instance = _frontend.register_sensor();
 
-    set_bus_id(instance, dev->get_bus_id());
-
     // request 50Hz update
     dev->register_periodic_callback(20 * AP_USEC_PER_MSEC, FUNCTOR_BIND_MEMBER(&AP_Baro_BMP388::timer, void));
 
@@ -130,7 +116,7 @@ bool AP_Baro_BMP388::init()
 
 
 
-//  accumulate a new sensor reading
+//  acumulate a new sensor reading
 void AP_Baro_BMP388::timer(void)
 {
     uint8_t buf[7];
@@ -156,16 +142,12 @@ void AP_Baro_BMP388::update(void)
 {
     WITH_SEMAPHORE(_sem);
 
-    if (pressure_count == 0) {
+    if (!has_sample) {
         return;
     }
 
-    _copy_to_frontend(instance,
-                      pressure_sum/pressure_count,
-                      temperature);
-
-    pressure_sum = 0;
-    pressure_count = 0;
+    _copy_to_frontend(instance, pressure, temperature);
+    has_sample = false;
 }
 
 /*
@@ -226,9 +208,9 @@ void AP_Baro_BMP388::update_pressure(uint32_t data)
     float press = partial_out1 + partial_out2 + partial4;
 
     WITH_SEMAPHORE(_sem);
-
-    pressure_sum += press;
-    pressure_count++;
+    
+    pressure = press;
+    has_sample = true;
 }
 
 /*
@@ -251,5 +233,3 @@ bool AP_Baro_BMP388::read_registers(uint8_t reg, uint8_t *data, uint8_t len)
     memcpy(data, &b[2], len);
     return true;
 }
-
-#endif  // AP_BARO_BMP388_ENABLED

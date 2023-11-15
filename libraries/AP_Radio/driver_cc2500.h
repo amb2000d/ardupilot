@@ -157,11 +157,7 @@ public:
 
     bool lock_bus(void)
     {
-        if (!dev) {
-            return false;
-        }
-        dev->get_semaphore()->take_blocking();
-        return true;
+        return dev && dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER);
     }
     void unlock_bus(void)
     {

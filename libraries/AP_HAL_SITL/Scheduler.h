@@ -28,12 +28,11 @@ public:
     void register_timer_failsafe(AP_HAL::Proc, uint32_t period_us) override;
 
     bool in_main_thread() const override;
-    bool is_system_initialized() override { return _initialized; };
-    void set_system_initialized() override;
+    void system_initialized() override;
 
     void reboot(bool hold_in_bootloader) override;
 
-    bool interrupts_are_blocked(void) const {
+    bool interrupts_are_blocked(void) {
         return _nested_atomic_ctr != 0;
     }
 
@@ -50,6 +49,7 @@ public:
     uint64_t stopped_clock_usec() const { return _stopped_clock_usec; }
 
     static void _run_io_procs();
+    static bool _should_reboot;
     static bool _should_exit;
 
     /*
@@ -65,10 +65,7 @@ public:
      * threads.
      */
     // a couple of helper functions to cope with SITL's time stepping
-    bool semaphore_wait_hack_required() const;
-
-    // get the name of the current thread, or nullptr if not known
-    const char *get_current_thread_name(void) const;
+    bool semaphore_wait_hack_required();
 
 private:
     SITL_State *_sitlState;
@@ -108,7 +105,6 @@ private:
         void *stack;
         const uint8_t *stack_min;
         const char *name;
-        pthread_t thread;
     };
     static struct thread_attr *threads;
     static const uint8_t stackfill = 0xEB;

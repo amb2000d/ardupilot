@@ -21,7 +21,7 @@ class AP_WindVane_Home : public AP_WindVane_Backend
 {
 public:
     // constructor
-    using AP_WindVane_Backend::AP_WindVane_Backend;
+    AP_WindVane_Home(AP_WindVane &frontend);
 
     // update state
     void update_direction() override;

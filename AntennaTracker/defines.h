@@ -3,6 +3,15 @@
 // Controller modes
 // ----------------
 
+enum ControlMode {
+    MANUAL=0,
+    STOP=1,
+    SCAN=2,
+    SERVO_TEST=3,
+    AUTO=10,
+    INITIALISING=16
+};
+
 enum ServoType {
     SERVO_TYPE_POSITION=0,
     SERVO_TYPE_ONOFF=1,
@@ -34,8 +43,6 @@ enum class PWMDisarmed {
 #define MASK_LOG_CURRENT                (1<<6)
 #define MASK_LOG_ANY                    0xFFFF
 
-//  Logging messages - only 32 messages are available to the vehicle here.
-enum log_messages {
-    LOG_V_BAR_MSG,
-    LOG_V_POS_MSG,
-};
+//  Logging messages
+#define LOG_V_BAR_MSG                   0x04
+#define LOG_V_POS_MSG                   0x05

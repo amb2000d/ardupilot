@@ -20,6 +20,12 @@
  *
  */
 
+#define GSCALAR(v, name, def) { sub.g.v.vtype, name, Parameters::k_param_ ## v, &sub.g.v, {def_value : def} }
+#define ASCALAR(v, name, def) { sub.aparm.v.vtype, name, Parameters::k_param_ ## v, (const void *)&sub.aparm.v, {def_value : def} }
+#define GGROUP(v, name, class) { AP_PARAM_GROUP, name, Parameters::k_param_ ## v, &sub.g.v, {group_info : class::var_info} }
+#define GOBJECT(v, name, class) { AP_PARAM_GROUP, name, Parameters::k_param_ ## v, (const void *)&sub.v, {group_info : class::var_info} }
+#define GOBJECTN(v, pname, name, class) { AP_PARAM_GROUP, name, Parameters::k_param_ ## pname, (const void *)&sub.v, {group_info : class::var_info} }
+
 const AP_Param::Info Sub::var_info[] = {
 
     // @Param: SURFACE_DEPTH
@@ -30,12 +36,12 @@ const AP_Param::Info Sub::var_info[] = {
     // @User: Standard
     GSCALAR(surface_depth, "SURFACE_DEPTH", SURFACE_DEPTH_DEFAULT),
 
-    // @Param: FORMAT_VERSION
+    // @Param: SYSID_SW_MREV
     // @DisplayName: Eeprom format version number
     // @Description: This value is incremented when changes are made to the eeprom format
     // @User: Advanced
     // @ReadOnly: True
-    GSCALAR(format_version, "FORMAT_VERSION",   0),
+    GSCALAR(format_version, "SYSID_SW_MREV",   0),
 
     // @Param: SYSID_THISMAV
     // @DisplayName: MAVLink system ID of this vehicle
@@ -207,7 +213,6 @@ const AP_Param::Info Sub::var_info[] = {
     // @DisplayName: Angle Max
     // @Description: Maximum lean angle in all flight modes
     // @Units: cdeg
-    // @Increment: 10
     // @Range: 1000 8000
     // @User: Advanced
     ASCALAR(angle_max, "ANGLE_MAX",                 DEFAULT_ANGLE_MAX),
@@ -235,7 +240,7 @@ const AP_Param::Info Sub::var_info[] = {
 
     // @Param: JS_GAIN_DEFAULT
     // @DisplayName: Default gain at boot
-    // @Description: Default gain at boot, must be in range [JS_GAIN_MIN , JS_GAIN_MAX]. Current gain value is accessible via NAMED_VALUE_FLOAT MAVLink message with name 'PilotGain'.
+    // @Description: Default gain at boot, must be in range [JS_GAIN_MIN , JS_GAIN_MAX]
     // @User: Standard
     // @Range: 0.1 1.0
     GSCALAR(gain_default, "JS_GAIN_DEFAULT", 0.5),
@@ -271,7 +276,7 @@ const AP_Param::Info Sub::var_info[] = {
 
     // @Param: JS_THR_GAIN
     // @DisplayName: Throttle gain scalar
-    // @Description: Scalar for gain on the throttle channel. Gets scaled with the current JS gain
+    // @Description: Scalar for gain on the throttle channel
     // @User: Standard
     // @Range: 0.5 4.0
     GSCALAR(throttle_gain, "JS_THR_GAIN", 1.0f),
@@ -403,25 +408,23 @@ const AP_Param::Info Sub::var_info[] = {
 
     // variables not in the g class which contain EEPROM saved variables
 
-#if AP_CAMERA_ENABLED
-    // @Group: CAM
+#if CAMERA == ENABLED
+    // @Group: CAM_
     // @Path: ../libraries/AP_Camera/AP_Camera.cpp
-    GOBJECT(camera, "CAM", AP_Camera),
+    GOBJECT(camera,           "CAM_", AP_Camera),
 #endif
 
-#if AP_RELAY_ENABLED
     // @Group: RELAY_
     // @Path: ../libraries/AP_Relay/AP_Relay.cpp
     GOBJECT(relay,                  "RELAY_", AP_Relay),
-#endif
 
     // @Group: COMPASS_
     // @Path: ../libraries/AP_Compass/AP_Compass.cpp
     GOBJECT(compass,        "COMPASS_", Compass),
 
-    // @Group: INS
+    // @Group: INS_
     // @Path: ../libraries/AP_InertialSensor/AP_InertialSensor.cpp
-    GOBJECT(ins,            "INS", AP_InertialSensor),
+    GOBJECT(ins,            "INS_", AP_InertialSensor),
 
     // @Group: WPNAV_
     // @Path: ../libraries/AC_WPNav/AC_WPNav.cpp
@@ -449,47 +452,23 @@ const AP_Param::Info Sub::var_info[] = {
     // @Path: GCS_Mavlink.cpp
     GOBJECTN(_gcs.chan_parameters[0],  gcs0,       "SR0_",     GCS_MAVLINK_Parameters),
 
-#if MAVLINK_COMM_NUM_BUFFERS >= 2
     // @Group: SR1_
     // @Path: GCS_Mavlink.cpp
     GOBJECTN(_gcs.chan_parameters[1],  gcs1,       "SR1_",     GCS_MAVLINK_Parameters),
-#endif
 
-#if MAVLINK_COMM_NUM_BUFFERS >= 3
     // @Group: SR2_
     // @Path: GCS_Mavlink.cpp
     GOBJECTN(_gcs.chan_parameters[2],  gcs2,       "SR2_",     GCS_MAVLINK_Parameters),
-#endif
 
-#if MAVLINK_COMM_NUM_BUFFERS >= 4
     // @Group: SR3_
     // @Path: GCS_Mavlink.cpp
     GOBJECTN(_gcs.chan_parameters[3],  gcs3,       "SR3_",     GCS_MAVLINK_Parameters),
-#endif
-
-#if MAVLINK_COMM_NUM_BUFFERS >= 5
-    // @Group: SR4_
-    // @Path: GCS_Mavlink.cpp
-    GOBJECTN(_gcs.chan_parameters[4],  gcs4,       "SR4_",     GCS_MAVLINK_Parameters),
-#endif
-
-#if MAVLINK_COMM_NUM_BUFFERS >= 6
-    // @Group: SR5_
-    // @Path: GCS_Mavlink.cpp
-    GOBJECTN(_gcs.chan_parameters[5],  gcs5,       "SR5_",     GCS_MAVLINK_Parameters),
-#endif
-
-#if MAVLINK_COMM_NUM_BUFFERS >= 7
-    // @Group: SR6_
-    // @Path: GCS_Mavlink.cpp
-    GOBJECTN(_gcs.chan_parameters[6],  gcs6,       "SR6_",     GCS_MAVLINK_Parameters),
-#endif
 
     // @Group: AHRS_
     // @Path: ../libraries/AP_AHRS/AP_AHRS.cpp
     GOBJECT(ahrs,                   "AHRS_",    AP_AHRS),
 
-#if HAL_MOUNT_ENABLED
+#if MOUNT == ENABLED
     // @Group: MNT
     // @Path: ../libraries/AP_Mount/AP_Mount.cpp
     GOBJECT(camera_mount,           "MNT",  AP_Mount),
@@ -511,26 +490,24 @@ const AP_Param::Info Sub::var_info[] = {
     // @Path: ../libraries/AP_BoardConfig/AP_BoardConfig.cpp
     GOBJECT(BoardConfig,            "BRD_",       AP_BoardConfig),
 
-#if HAL_MAX_CAN_PROTOCOL_DRIVERS
+#if HAL_WITH_UAVCAN
     // @Group: CAN_
-    // @Path: ../libraries/AP_CANManager/AP_CANManager.cpp
-    GOBJECT(can_mgr,        "CAN_",       AP_CANManager),
+    // @Path: ../libraries/AP_BoardConfig/AP_BoardConfig_CAN.cpp
+    GOBJECT(BoardConfig_CAN,        "CAN_",       AP_BoardConfig_CAN),
 #endif
 
-#if AP_SIM_ENABLED
-    // @Group: SIM_
-    // @Path: ../libraries/SITL/SITL.cpp
-    GOBJECT(sitl, "SIM_", SITL::SIM),
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    GOBJECT(sitl, "SIM_", SITL::SITL),
 #endif
 
-    // @Group: BARO
+    // @Group: GND_
     // @Path: ../libraries/AP_Baro/AP_Baro.cpp
-    GOBJECT(barometer, "BARO", AP_Baro),
+    GOBJECT(barometer, "GND_", AP_Baro),
 
     // GPS driver
-    // @Group: GPS
+    // @Group: GPS_
     // @Path: ../libraries/AP_GPS/AP_GPS.cpp
-    GOBJECT(gps, "GPS", AP_GPS),
+    GOBJECT(gps, "GPS_", AP_GPS),
 
     // Leak detector
     // @Group: LEAK
@@ -541,13 +518,19 @@ const AP_Param::Info Sub::var_info[] = {
     // @Path: ../libraries/AP_Scheduler/AP_Scheduler.cpp
     GOBJECT(scheduler, "SCHED_", AP_Scheduler),
 
+#if AC_FENCE == ENABLED
+    // @Group: FENCE_
+    // @Path: ../libraries/AC_Fence/AC_Fence.cpp
+    GOBJECT(fence,      "FENCE_",   AC_Fence),
+#endif
+
 #if AVOIDANCE_ENABLED == ENABLED
     // @Group: AVOID_
     // @Path: ../libraries/AC_Avoidance/AC_Avoid.cpp
     GOBJECT(avoid,      "AVOID_",   AC_Avoid),
 #endif
 
-#if HAL_RALLY_ENABLED
+#if AC_RALLY == ENABLED
     // @Group: RALLY_
     // @Path: ../libraries/AP_Rally/AP_Rally.cpp
     GOBJECT(rally,      "RALLY_",   AP_Rally),
@@ -563,17 +546,13 @@ const AP_Param::Info Sub::var_info[] = {
     GOBJECT(rcmap, "RCMAP_",        RCMapper),
 #endif
 
-#if HAL_NAVEKF2_AVAILABLE
     // @Group: EK2_
     // @Path: ../libraries/AP_NavEKF2/AP_NavEKF2.cpp
-    GOBJECTN(ahrs.EKF2, NavEKF2, "EK2_", NavEKF2),
-#endif
+    GOBJECTN(EKF2, NavEKF2, "EK2_", NavEKF2),
 
-#if HAL_NAVEKF3_AVAILABLE
     // @Group: EK3_
     // @Path: ../libraries/AP_NavEKF3/AP_NavEKF3.cpp
-    GOBJECTN(ahrs.EKF3, NavEKF3, "EK3_", NavEKF3),
-#endif
+    GOBJECTN(EKF3, NavEKF3, "EK3_", NavEKF3),
 
     // @Group: MIS_
     // @Path: ../libraries/AP_Mission/AP_Mission.cpp
@@ -581,23 +560,23 @@ const AP_Param::Info Sub::var_info[] = {
 
 #if RANGEFINDER_ENABLED == ENABLED
     // @Group: RNGFND
-    // @Path: ../libraries/AP_RangeFinder/AP_RangeFinder.cpp
+    // @Path: ../libraries/AP_RangeFinder/RangeFinder.cpp
     GOBJECT(rangefinder,   "RNGFND", RangeFinder),
 #endif
 
-#if AP_TERRAIN_AVAILABLE
+#if AP_TERRAIN_AVAILABLE && AC_TERRAIN
     // @Group: TERRAIN_
     // @Path: ../libraries/AP_Terrain/AP_Terrain.cpp
     GOBJECT(terrain,                "TERRAIN_", AP_Terrain),
 #endif
 
-#if AP_OPTICALFLOW_ENABLED
+#if OPTFLOW == ENABLED
     // @Group: FLOW
-    // @Path: ../libraries/AP_OpticalFlow/AP_OpticalFlow.cpp
-    GOBJECT(optflow,   "FLOW", AP_OpticalFlow),
+    // @Path: ../libraries/AP_OpticalFlow/OpticalFlow.cpp
+    GOBJECT(optflow,   "FLOW", OpticalFlow),
 #endif
 
-#if AP_RPM_ENABLED
+#if RPM_ENABLED == ENABLED
     // @Group: RPM
     // @Path: ../libraries/AP_RPM/AP_RPM.cpp
     GOBJECT(rpm_sensor, "RPM", AP_RPM),
@@ -607,13 +586,18 @@ const AP_Param::Info Sub::var_info[] = {
     // @Path: ../libraries/AP_Notify/AP_Notify.cpp
     GOBJECT(notify, "NTF_",  AP_Notify),
 
+#if AP_TERRAIN_AVAILABLE && AC_TERRAIN
+    // @Param: TERRAIN_FOLLOW
+    // @DisplayName: Terrain Following use control
+    // @Description: This enables terrain following for RTL and SURFACE flight modes. To use this option TERRAIN_ENABLE must be 1 and the GCS must  support sending terrain data to the aircraft.  In RTL the RTL_ALT will be considered a height above the terrain.  In LAND mode the vehicle will slow to LAND_SPEED 10m above terrain (instead of 10m above home).  This parameter does not affect AUTO and Guided which use a per-command flag to determine if the height is above-home, absolute or above-terrain.
+    // @Values: 0:Do Not Use in RTL and SURFACE,1:Use in RTL and SURFACE
+    // @User: Standard
+    GSCALAR(terrain_follow, "TERRAIN_FOLLOW", 0),
+#endif
+
     // @Group:
     // @Path: Parameters.cpp
     GOBJECT(g2, "",  ParametersG2),
-
-    // @Group:
-    // @Path: ../libraries/AP_Vehicle/AP_Vehicle.cpp
-    PARAM_VEHICLE_INFO,
 
     AP_VAREND
 };
@@ -622,18 +606,14 @@ const AP_Param::Info Sub::var_info[] = {
   2nd group of parameters
  */
 const AP_Param::GroupInfo ParametersG2::var_info[] = {
-#if STATS_ENABLED == ENABLED
-    // @Group: STAT
-    // @Path: ../libraries/AP_Stats/AP_Stats.cpp
-    AP_SUBGROUPINFO(stats, "STAT", 1, ParametersG2, AP_Stats),
-#endif
-#if HAL_PROXIMITY_ENABLED
+
+#if PROXIMITY_ENABLED == ENABLED
     // @Group: PRX
     // @Path: ../libraries/AP_Proximity/AP_Proximity.cpp
     AP_SUBGROUPINFO(proximity, "PRX", 2, ParametersG2, AP_Proximity),
 #endif
 
-#if AP_GRIPPER_ENABLED
+#if GRIPPER_ENABLED == ENABLED
     // @Group: GRIP_
     // @Path: ../libraries/AP_Gripper/AP_Gripper.cpp
     AP_SUBGROUPINFO(gripper, "GRIP_", 3, ParametersG2, AP_Gripper),
@@ -647,13 +627,11 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Path: ../libraries/RC_Channel/RC_Channels_VarInfo.h
     AP_SUBGROUPINFO(rc_channels, "RC", 17, ParametersG2, RC_Channels),
 
-#if AP_SCRIPTING_ENABLED
+#ifdef ENABLE_SCRIPTING
     // @Group: SCR_
     // @Path: ../libraries/AP_Scripting/AP_Scripting.cpp
     AP_SUBGROUPINFO(scripting, "SCR_", 18, ParametersG2, AP_Scripting),
 #endif
-
-    // 19 was airspeed
 
     AP_GROUPEND
 };
@@ -662,6 +640,9 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
   constructor for g2 object
  */
 ParametersG2::ParametersG2()
+#if PROXIMITY_ENABLED == ENABLED
+    : proximity(sub.serial_manager)
+#endif
 {
     AP_Param::setup_object_defaults(this, var_info);
 }
@@ -676,6 +657,13 @@ const AP_Param::ConversionInfo conversion_table[] = {
 
 void Sub::load_parameters()
 {
+    if (!AP_Param::check_var_info()) {
+        hal.console->printf("Bad var table\n");
+        AP_HAL::panic("Bad var table");
+    }
+
+    // disable centrifugal force correction, it will be enabled as part of the arming process
+    ahrs.set_correct_centrifugal(false);
     hal.util->set_soft_armed(false);
 
     if (!g.format_version.load() ||
@@ -690,7 +678,6 @@ void Sub::load_parameters()
         g.format_version.set_and_save(Parameters::k_format_version);
         hal.console->println("done.");
     }
-    g.format_version.set_default(Parameters::k_format_version);
 
     uint32_t before = AP_HAL::micros();
     // Load all auto-loaded EEPROM variables
@@ -701,28 +688,22 @@ void Sub::load_parameters()
     AP_Param::set_frame_type_flags(AP_PARAM_FRAME_SUB);
 
     convert_old_parameters();
-    AP_Param::set_defaults_from_table(defaults_table, ARRAY_SIZE(defaults_table));
-    // We should ignore this parameter since ROVs are neutral buoyancy
-    AP_Param::set_by_name("MOT_THST_HOVER", 0.5);
 
-// PARAMETER_CONVERSION - Added: JAN-2022
-#if AP_AIRSPEED_ENABLED
-    // Find G2's Top Level Key
-    AP_Param::ConversionInfo info;
-    if (!AP_Param::find_top_level_key_by_pointer(&g2, info.old_key)) {
-        return;
-    }
-
-    const uint16_t old_index = 19;          // Old parameter index in the tree
-    const uint16_t old_top_element = 4051;  // Old group element in the tree for the first subgroup element
-    AP_Param::convert_class(info.old_key, &airspeed, airspeed.var_info, old_index, old_top_element, false);
-#endif
-
-
-    // PARAMETER_CONVERSION - Added: Mar-2022
-#if AP_FENCE_ENABLED
-    AP_Param::convert_class(g.k_param_fence_old, &fence, fence.var_info, 0, 0, true);
-#endif
+    AP_Param::set_default_by_name("BRD_SAFETYENABLE", 0);
+    AP_Param::set_default_by_name("ARMING_CHECK",
+            AP_Arming::ARMING_CHECK_RC |
+            AP_Arming::ARMING_CHECK_VOLTAGE |
+            AP_Arming::ARMING_CHECK_BATTERY);
+    AP_Param::set_default_by_name("CIRCLE_RATE", 2.0f);
+    AP_Param::set_default_by_name("ATC_ACCEL_Y_MAX", 110000.0f);
+    AP_Param::set_default_by_name("RC3_TRIM", 1100);
+    AP_Param::set_default_by_name("COMPASS_OFFS_MAX", 1000);
+    AP_Param::set_default_by_name("INS_GYR_CAL", 0);
+    AP_Param::set_default_by_name("MNT_DEFLT_MODE", MAV_MOUNT_MODE_RC_TARGETING);
+    AP_Param::set_default_by_name("MNT_JSTICK_SPD", 100);
+    AP_Param::set_by_name("MNT_RC_IN_PAN", 7);
+    AP_Param::set_by_name("MNT_RC_IN_TILT", 8);
+    AP_Param::set_default_by_name("RNGFND1_TYPE", RangeFinder::RangeFinder_TYPE_MAVLink);
 }
 
 void Sub::convert_old_parameters()
@@ -734,7 +715,10 @@ void Sub::convert_old_parameters()
         { Parameters::k_param_attitude_control, 386, AP_PARAM_FLOAT, "ATC_RAT_PIT_FLTE" },
         { Parameters::k_param_attitude_control, 387, AP_PARAM_FLOAT, "ATC_RAT_YAW_FLTE" },
     };
-    AP_Param::convert_old_parameters(&filt_conversion_info[0], ARRAY_SIZE(filt_conversion_info));
+    uint8_t filt_table_size = ARRAY_SIZE(filt_conversion_info);
+    for (uint8_t i=0; i<filt_table_size; i++) {
+        AP_Param::convert_old_parameters(&filt_conversion_info[i], 1.0f);
+    }
 
     SRV_Channels::upgrade_parameters();
 }

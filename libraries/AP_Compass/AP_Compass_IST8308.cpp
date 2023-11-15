@@ -16,8 +16,6 @@
  */
 #include "AP_Compass_IST8308.h"
 
-#if AP_COMPASS_IST8308_ENABLED
-
 #include <stdio.h>
 #include <utility>
 
@@ -179,6 +177,8 @@ bool AP_Compass_IST8308::init()
     _dev->register_periodic_callback(SAMPLING_PERIOD_USEC,
                                      FUNCTOR_BIND_MEMBER(&AP_Compass_IST8308::timer, void));
 
+    _perf_xfer_err = hal.util->perf_alloc(AP_HAL::Util::PC_COUNT, "IST8308_xfer_err");
+
     return true;
 
 fail:
@@ -197,6 +197,7 @@ void AP_Compass_IST8308::timer()
 
     if (!_dev->read_registers(STAT1_REG, &stat, 1) ||
         !(stat & STAT1_VAL_DRDY)) {
+        hal.util->perf_count(_perf_xfer_err);
         return;
     }
 
@@ -206,6 +207,7 @@ void AP_Compass_IST8308::timer()
 
     if (!_dev->read_registers(DATAX_L_REG, (uint8_t *) &buffer,
                               sizeof(buffer))) {
+        hal.util->perf_count(_perf_xfer_err);
         return;
     }
 
@@ -226,5 +228,3 @@ void AP_Compass_IST8308::read()
 {
     drain_accumulated_samples(_instance);
 }
-
-#endif  // AP_COMPASS_IST8308_ENABLED

@@ -25,6 +25,18 @@
   specific type that it handles.
  */
 
+struct MTK19_detect_state {
+    uint8_t payload_counter;
+    uint8_t step;
+    uint8_t ck_a, ck_b;
+};
+
+struct MTK_detect_state {
+    uint8_t payload_counter;
+    uint8_t step;
+    uint8_t ck_a, ck_b;
+};
+
 struct NMEA_detect_state {
     uint8_t step;
     uint8_t ck;

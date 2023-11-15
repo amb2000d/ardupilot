@@ -36,19 +36,18 @@ public:
     ~SocketAPM();
 
     bool connect(const char *address, uint16_t port);
-    bool connect_timeout(const char *address, uint16_t port, uint32_t timeout_ms);
     bool bind(const char *address, uint16_t port);
-    bool reuseaddress() const;
-    bool set_blocking(bool blocking) const;
-    bool set_cloexec() const;
-    void set_broadcast(void) const;
+    bool reuseaddress();
+    bool set_blocking(bool blocking);
+    bool set_cloexec();
+    void set_broadcast(void);
 
-    ssize_t send(const void *pkt, size_t size) const;
+    ssize_t send(const void *pkt, size_t size);
     ssize_t sendto(const void *buf, size_t size, const char *address, uint16_t port);
     ssize_t recv(void *pkt, size_t size, uint32_t timeout_ms);
 
     // return the IP address and port of the last received packet
-    void last_recv_address(const char *&ip_addr, uint16_t &port) const;
+    void last_recv_address(const char *&ip_addr, uint16_t &port);
 
     // return true if there is pending data for input
     bool pollin(uint32_t timeout_ms);
@@ -57,7 +56,7 @@ public:
     bool pollout(uint32_t timeout_ms);
 
     // start listening for new tcp connections
-    bool listen(uint16_t backlog) const;
+    bool listen(uint16_t backlog);
 
     // accept a new connection. Only valid for TCP connections after
     // listen has been used. A new socket is returned

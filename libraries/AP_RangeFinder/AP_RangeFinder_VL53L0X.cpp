@@ -20,8 +20,6 @@
  */
 #include "AP_RangeFinder_VL53L0X.h"
 
-#if AP_RANGEFINDER_VL53L0X_ENABLED
-
 #include <utility>
 
 #include <AP_HAL/AP_HAL.h>
@@ -213,6 +211,11 @@ const AP_RangeFinder_VL53L0X::RegData AP_RangeFinder_VL53L0X::tuning_data[] =
     { 0x80, 0x00 },
 };
 
+/*
+   The constructor also initializes the rangefinder. Note that this
+   constructor is not called until detect() returns true, so we
+   already know that we should setup the rangefinder
+*/
 AP_RangeFinder_VL53L0X::AP_RangeFinder_VL53L0X(RangeFinder::RangeFinder_State &_state, AP_RangeFinder_Params &_params, AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev)
     : AP_RangeFinder_Backend(_state, _params)
     , dev(std::move(_dev)) {}
@@ -764,13 +767,13 @@ uint16_t AP_RangeFinder_VL53L0X::read_register16(uint8_t reg)
 void AP_RangeFinder_VL53L0X::update(void)
 {
     if (counter > 0) {
-        state.distance_m = (sum_mm * 0.001f) / counter;
+        state.distance_cm = sum_mm / (10*counter);
         state.last_reading_ms = AP_HAL::millis();
         sum_mm = 0;
         counter = 0;
         update_status();
     } else {
-        set_status(RangeFinder::Status::NoData);
+        set_status(RangeFinder::RangeFinder_NoData);
     }
 }
 
@@ -782,5 +785,3 @@ void AP_RangeFinder_VL53L0X::timer(void)
         counter++;
     }
 }
-
-#endif  // AP_RANGEFINDER_VL53L0X_ENABLED

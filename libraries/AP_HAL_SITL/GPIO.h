@@ -1,7 +1,6 @@
 #pragma once
 
 #include "AP_HAL_SITL.h"
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
 
 class HALSITL::GPIO : public AP_HAL::GPIO {
 public:
@@ -18,12 +17,8 @@ public:
     /* return true if USB cable is connected */
     bool usb_connected(void) override;
 
-    bool valid_pin(uint8_t pin) const override { return pin < 16; }
-    
 private:
     SITL_State *_sitlState;
-
-    uint8_t pin_mode_is_write;
 };
 
 class HALSITL::DigitalSource : public AP_HAL::DigitalSource {
@@ -37,4 +32,3 @@ public:
 private:
     uint8_t _pin;
 };
-#endif

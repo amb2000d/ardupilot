@@ -1969,7 +1969,8 @@ public:
     using Mode::Mode;
     Number mode_number() const override { return Number::DIVE; }
 
-    virtual void run() override;
+    bool init(bool ignore_checks) override;
+    void run() override;
 
     bool requires_GPS() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
@@ -1980,7 +1981,7 @@ public:
 protected:
 
     const char *name() const override { return "DIVE"; }
-    const char *name4() const override { return "DIVE"; }
+    const char *name4() const override { return "DIVV"; }
 
 private:
 

@@ -1,6 +1,5 @@
 #include "Copter.h"
 
-#if MODE_TURTLE_ENABLED == ENABLED
 
 bool ModeDive::init(bool ignore_checks)
 {
@@ -23,4 +22,3 @@ void ModeDive::run()
     }
     
 }
-#endif
